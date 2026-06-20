@@ -48,6 +48,16 @@ Node.js is not required.
 cargo run
 ```
 
+Application data is stored in:
+
+```text
+%LOCALAPPDATA%\TelemetryForge
+```
+
+This includes `config.yaml`, saved screens and bundled samples. Legacy data
+found next to the executable is migrated automatically. Windows autostart
+loads the last active configuration and starts rendering in the system tray.
+
 ## Release build
 
 ```powershell

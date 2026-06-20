@@ -23,6 +23,10 @@ cargo build --release
 The release executable is written to `target\release\TelemetryForge.exe`.
 Always close `UsbMonitor.exe` before starting TelemetryForge.
 
+Configuration and saved screens are stored in
+`%LOCALAPPDATA%\TelemetryForge`, so Windows autostart works independently of
+the process working directory.
+
 For complete English setup, editor and troubleshooting documentation, see
 [README.en.md](README.en.md).
 

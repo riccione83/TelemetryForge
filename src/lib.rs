@@ -76,6 +76,9 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
                 }
+                if let Err(error) = ui::start_rendering(app.state::<AppState>()) {
+                    tracing::error!(%error, "could not start rendering during Windows startup");
+                }
             }
             Ok(())
         })

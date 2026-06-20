@@ -21,7 +21,13 @@ pub struct AppState {
 impl AppState {
     pub fn load() -> Self {
         let config_path = persistence::default_config_path();
-        let config = persistence::load_or_create(&config_path).unwrap_or_default();
+        let config = match persistence::load_or_create(&config_path) {
+            Ok(config) => config,
+            Err(error) => {
+                tracing::error!(error = %format!("{error:#}"), "could not load configuration");
+                AppConfig::default()
+            }
+        };
         Self {
             config_path,
             config: Arc::new(RwLock::new(config)),

@@ -13,7 +13,15 @@ use imageproc::{
 pub fn draw_all(image: &mut RgbImage, config: &AppConfig, sensors: &SensorSnapshot) -> Result<()> {
     for widget in config.widgets.iter().filter(|w| w.enabled) {
         let value = numeric(widget.kind, sensors);
-        let primary = opacity(active_colour(widget, value), widget.opacity);
+        let primary = if widget.use_thresholds
+            && matches!(
+                widget.render_mode,
+                WidgetRenderMode::Bar | WidgetRenderMode::Circle | WidgetRenderMode::Graph
+            ) {
+            parse(&widget.colour, widget.opacity)
+        } else {
+            opacity(active_colour(widget, value), widget.opacity)
+        };
         let secondary = parse(&widget.secondary_colour, widget.opacity);
         let mut layer = RgbaImage::new(image.width(), image.height());
         match widget.render_mode {
@@ -89,7 +97,7 @@ fn bar(layer: &mut RgbaImage, w: &WidgetConfig, ratio: f32, a: Rgba<u8>, b: Rgba
             let c = if edge {
                 opacity(a, 0.7)
             } else if px < fill {
-                gradient(a, b, px as f32 / w.width.max(1) as f32)
+                indicator_colour(w, a, b, px as f32 / w.width.max(1) as f32)
             } else {
                 Rgba([a[0] / 5, a[1] / 5, a[2] / 5, a[3] / 2])
             };
@@ -125,7 +133,7 @@ fn circle(layer: &mut RgbaImage, w: &WidgetConfig, ratio: f32, a: Rgba<u8>, b: R
                 continue;
             }
             let c = if angle <= sweep * ratio {
-                gradient(a, b, angle / sweep)
+                indicator_colour(w, a, b, angle / sweep)
             } else {
                 Rgba([a[0] / 5, a[1] / 5, a[2] / 5, a[3] / 2])
             };
@@ -183,7 +191,14 @@ fn graph(
             layer,
             (x0, y0),
             (x1, y1),
-            gradient(a, b, i as f32 / values.len() as f32),
+            graph_colour(
+                w,
+                a,
+                b,
+                values[i - 1],
+                values[i],
+                i as f32 / values.len() as f32,
+            ),
         );
     }
     draw_hollow_rect_mut(
@@ -205,6 +220,84 @@ fn active_colour(w: &WidgetConfig, value: Option<f32>) -> Rgba<u8> {
         }
     }
     parse(&w.colour, 1.0)
+}
+
+fn indicator_colour(
+    widget: &WidgetConfig,
+    base: Rgba<u8>,
+    secondary: Rgba<u8>,
+    progress: f32,
+) -> Rgba<u8> {
+    let progress = progress.clamp(0.0, 1.0);
+    if !widget.use_thresholds {
+        return gradient(base, secondary, progress);
+    }
+
+    let maximum = max_for(widget.kind).max(1.0);
+    let warning_point = (widget.warning_threshold / maximum).clamp(0.0, 1.0);
+    let critical_point = (widget.critical_threshold / maximum).clamp(warning_point, 1.0);
+    let warning = parse(&widget.warning_colour, widget.opacity);
+    let critical = parse(&widget.critical_colour, widget.opacity);
+
+    if progress <= warning_point {
+        let amount = if warning_point > 0.0 {
+            progress / warning_point
+        } else {
+            1.0
+        };
+        gradient(base, warning, amount)
+    } else if progress <= critical_point {
+        let span = critical_point - warning_point;
+        let amount = if span > 0.0 {
+            (progress - warning_point) / span
+        } else {
+            1.0
+        };
+        gradient(warning, critical, amount)
+    } else {
+        critical
+    }
+}
+
+fn graph_colour(
+    widget: &WidgetConfig,
+    base: Rgba<u8>,
+    secondary: Rgba<u8>,
+    previous_value: f32,
+    current_value: f32,
+    horizontal_progress: f32,
+) -> Rgba<u8> {
+    if !widget.use_thresholds {
+        return gradient(base, secondary, horizontal_progress);
+    }
+    let value = (previous_value + current_value) / 2.0;
+    threshold_value_colour(widget, base, value)
+}
+
+fn threshold_value_colour(widget: &WidgetConfig, base: Rgba<u8>, value: f32) -> Rgba<u8> {
+    let warning = widget.warning_threshold.max(0.0);
+    let critical = widget.critical_threshold.max(warning);
+    let warning_colour = parse(&widget.warning_colour, widget.opacity);
+    let critical_colour = parse(&widget.critical_colour, widget.opacity);
+
+    if value <= warning {
+        let amount = if warning > 0.0 {
+            (value / warning).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        gradient(base, warning_colour, amount)
+    } else if value <= critical {
+        let span = critical - warning;
+        let amount = if span > 0.0 {
+            ((value - warning) / span).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        gradient(warning_colour, critical_colour, amount)
+    } else {
+        critical_colour
+    }
 }
 fn numeric(k: WidgetKind, s: &SensorSnapshot) -> Option<f32> {
     match k {
@@ -304,4 +397,68 @@ fn composite(dst: &mut RgbImage, src: &RgbaImage, ox: i32, oy: i32) {
 }
 fn inside(i: &RgbaImage, x: i32, y: i32) -> bool {
     x >= 0 && y >= 0 && x < i.width() as i32 && y < i.height() as i32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn threshold_widget() -> WidgetConfig {
+        let mut widget = WidgetConfig::new(WidgetKind::CpuUsage, 0, 0, "{value}");
+        widget.render_mode = WidgetRenderMode::Bar;
+        widget.use_thresholds = true;
+        widget.colour = "#0000ff".into();
+        widget.warning_colour = "#ffff00".into();
+        widget.critical_colour = "#ff0000".into();
+        widget.warning_threshold = 70.0;
+        widget.critical_threshold = 90.0;
+        widget
+    }
+
+    #[test]
+    fn threshold_gradient_hits_each_configured_colour() {
+        let widget = threshold_widget();
+        let base = parse(&widget.colour, 1.0);
+        let secondary = parse(&widget.secondary_colour, 1.0);
+        assert_eq!(indicator_colour(&widget, base, secondary, 0.0), base);
+        assert_eq!(
+            indicator_colour(&widget, base, secondary, 0.7),
+            parse(&widget.warning_colour, 1.0)
+        );
+        assert_eq!(
+            indicator_colour(&widget, base, secondary, 0.9),
+            parse(&widget.critical_colour, 1.0)
+        );
+        assert_eq!(
+            indicator_colour(&widget, base, secondary, 1.0),
+            parse(&widget.critical_colour, 1.0)
+        );
+    }
+
+    #[test]
+    fn normal_gradient_is_preserved_when_thresholds_are_disabled() {
+        let mut widget = threshold_widget();
+        widget.use_thresholds = false;
+        let base = parse(&widget.colour, 1.0);
+        let secondary = parse(&widget.secondary_colour, 1.0);
+        assert_eq!(
+            indicator_colour(&widget, base, secondary, 0.5),
+            gradient(base, secondary, 0.5)
+        );
+    }
+
+    #[test]
+    fn graph_segments_use_their_historical_value_for_threshold_colour() {
+        let widget = threshold_widget();
+        let base = parse(&widget.colour, 1.0);
+        let secondary = parse(&widget.secondary_colour, 1.0);
+        assert_eq!(
+            graph_colour(&widget, base, secondary, 69.0, 71.0, 0.5),
+            parse(&widget.warning_colour, 1.0)
+        );
+        assert_eq!(
+            graph_colour(&widget, base, secondary, 89.0, 91.0, 0.5),
+            parse(&widget.critical_colour, 1.0)
+        );
+    }
 }

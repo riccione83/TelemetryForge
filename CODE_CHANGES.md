@@ -8,6 +8,17 @@ made to TelemetryForge.
 These changes are included in the current `main` branch and continuous Windows
 release.
 
+### Threshold gradients
+
+- Changed threshold-enabled bars and circles to use a positional colour scale:
+  base colour → warning colour → critical colour.
+- A critical indicator now preserves all three colour regions instead of
+  recolouring the complete bar or circle with the critical colour.
+- Historical graphs now colour each line segment from that segment's sensor
+  value using the same configurable base → warning → critical scale.
+- With thresholds disabled, graphs retain their original horizontal
+  primary-to-secondary gradient.
+
 ### Editor usability
 
 - Added collapsible widget configuration panels.

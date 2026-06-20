@@ -282,11 +282,13 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
     let sensors = state.sensors.clone();
     let status = state.status.clone();
     thread::Builder::new()
-        .name("turzx-renderer".into())
+        .name("telemetryforge-renderer".into())
         .spawn(move || {
             let initial = config.read().clone();
             let mut session = display_driver::DisplaySession::connect(&initial.display).ok();
-            let mut target = poller::read_snapshot(
+            let mut sensor_poller = poller::SensorPoller::new();
+            thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+            let mut target = sensor_poller.read(
                 initial.libre_hardware_monitor_dll.as_deref(),
                 initial.cpu_temperature_source,
             );
@@ -294,12 +296,15 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
             let mut previous_frame: Option<RgbImage> = None;
             let mut last_sensor_poll = Instant::now();
             let mut applied_brightness = initial.display.brightness;
+            let mut rendered_config: Option<AppConfig> = None;
+            let mut rendered_dynamic_key = String::new();
+            let mut rendered_visual_signature = 0;
             while !thread_stop.load(Ordering::Relaxed) {
                 let current = config.read().clone();
                 if last_sensor_poll.elapsed()
                     >= Duration::from_millis(current.sensor_poll_ms.max(250))
                 {
-                    let mut next = poller::read_snapshot(
+                    let mut next = sensor_poller.read(
                         current.libre_hardware_monitor_dll.as_deref(),
                         current.cpu_temperature_source,
                     );
@@ -309,6 +314,18 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
                 }
                 interpolate_snapshot(&mut displayed, &target, 0.22);
                 *sensors.write() = displayed.clone();
+                let dynamic_key = renderer_dynamic_key(&current);
+                let visual_signature = renderer::visual_signature(&current, &displayed);
+                let should_render = previous_frame.is_none()
+                    || rendered_config.as_ref() != Some(&current)
+                    || rendered_dynamic_key != dynamic_key
+                    || rendered_visual_signature != visual_signature;
+                if !should_render {
+                    thread::sleep(Duration::from_millis(
+                        current.frame_interval_ms.clamp(50, 1000),
+                    ));
+                    continue;
+                }
                 let result = renderer::render(&current, &displayed).and_then(|image| {
                     if session.is_none() {
                         session = Some(display_driver::DisplaySession::connect(&current.display)?);
@@ -330,6 +347,9 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
                         session = None;
                     } else {
                         previous_frame = Some(image);
+                        rendered_config = Some(current.clone());
+                        rendered_dynamic_key = dynamic_key.clone();
+                        rendered_visual_signature = visual_signature;
                     }
                     send_result
                 });
@@ -352,44 +372,101 @@ fn interpolate_snapshot(
     current: &mut crate::sensors::model::SensorSnapshot,
     target: &crate::sensors::model::SensorSnapshot,
     amount: f32,
-) {
-    fn blend(current: &mut Option<f32>, target: Option<f32>, amount: f32) {
+) -> bool {
+    fn blend(current: &mut Option<f32>, target: Option<f32>, amount: f32) -> bool {
         if let Some(target) = target {
-            *current = Some(match *current {
-                Some(value) => value + (target - value) * amount,
-                None => target,
-            });
+            let next = match *current {
+                Some(value) if (target - value).abs() > 0.05 => value + (target - value) * amount,
+                _ => target,
+            };
+            let changed = current.is_none_or(|value| (next - value).abs() > f32::EPSILON);
+            *current = Some(next);
+            changed
+        } else {
+            false
         }
     }
-    blend(&mut current.cpu_temperature, target.cpu_temperature, amount);
-    blend(
+    let mut changed = blend(&mut current.cpu_temperature, target.cpu_temperature, amount);
+    changed |= blend(
         &mut current.cpu_temperature_core,
         target.cpu_temperature_core,
         amount,
     );
-    blend(
+    changed |= blend(
         &mut current.cpu_temperature_socket,
         target.cpu_temperature_socket,
         amount,
     );
-    blend(&mut current.cpu_usage, target.cpu_usage, amount);
-    blend(&mut current.gpu_temperature, target.gpu_temperature, amount);
-    blend(&mut current.gpu_usage, target.gpu_usage, amount);
-    blend(&mut current.gpu_clock, target.gpu_clock, amount);
-    blend(&mut current.ram_usage, target.ram_usage, amount);
-    blend(&mut current.vram_usage, target.vram_usage, amount);
-    blend(&mut current.disk_usage, target.disk_usage, amount);
-    blend(&mut current.network_upload, target.network_upload, amount);
-    blend(
+    changed |= blend(&mut current.cpu_usage, target.cpu_usage, amount);
+    changed |= blend(&mut current.gpu_temperature, target.gpu_temperature, amount);
+    changed |= blend(&mut current.gpu_usage, target.gpu_usage, amount);
+    changed |= blend(&mut current.gpu_clock, target.gpu_clock, amount);
+    changed |= blend(&mut current.ram_usage, target.ram_usage, amount);
+    changed |= blend(&mut current.vram_usage, target.vram_usage, amount);
+    changed |= blend(&mut current.disk_usage, target.disk_usage, amount);
+    changed |= blend(&mut current.network_upload, target.network_upload, amount);
+    changed |= blend(
         &mut current.network_download,
         target.network_download,
         amount,
     );
-    blend(&mut current.fan_speed, target.fan_speed, amount);
-    current.history_cpu = target.history_cpu.clone();
-    current.history_gpu = target.history_gpu.clone();
-    current.history_network_upload = target.history_network_upload.clone();
-    current.history_network_download = target.history_network_download.clone();
+    changed |= blend(&mut current.fan_speed, target.fan_speed, amount);
+    if current.history_cpu != target.history_cpu {
+        current.history_cpu.clone_from(&target.history_cpu);
+        changed = true;
+    }
+    if current.history_gpu != target.history_gpu {
+        current.history_gpu.clone_from(&target.history_gpu);
+        changed = true;
+    }
+    if current.history_network_upload != target.history_network_upload {
+        current
+            .history_network_upload
+            .clone_from(&target.history_network_upload);
+        changed = true;
+    }
+    if current.history_network_download != target.history_network_download {
+        current
+            .history_network_download
+            .clone_from(&target.history_network_download);
+        changed = true;
+    }
+    changed
+}
+
+fn renderer_dynamic_key(config: &AppConfig) -> String {
+    use crate::config::schema::{BackgroundSource, WidgetKind};
+    use chrono::Local;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let has_clock = config
+        .widgets
+        .iter()
+        .any(|widget| widget.enabled && widget.kind == WidgetKind::Clock);
+    let has_date = config
+        .widgets
+        .iter()
+        .any(|widget| widget.enabled && widget.kind == WidgetKind::Date);
+    let now = Local::now();
+    let clock = has_clock.then(|| now.format("%Y%m%d%H%M").to_string());
+    let date = has_date.then(|| now.format("%Y%m%d").to_string());
+    let slide = if config.background.source == BackgroundSource::Folder {
+        let seconds = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        Some(
+            seconds
+                / config
+                    .background
+                    .slideshow_interval_minutes
+                    .max(1)
+                    .saturating_mul(60),
+        )
+    } else {
+        None
+    };
+    format!("{clock:?}:{date:?}:{slide:?}")
 }
 
 fn update_histories(

@@ -1,7 +1,17 @@
 use ab_glyph::FontArc;
 use anyhow::{Context, Result};
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, Mutex},
+};
+
+static FONT_CACHE: LazyLock<Mutex<HashMap<String, FontArc>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub fn load(name: &str) -> Result<FontArc> {
+    if let Some(font) = FONT_CACHE.lock().expect("font cache poisoned").get(name) {
+        return Ok(font.clone());
+    }
     let requested = match name {
         "Arial" => r"C:\Windows\Fonts\arial.ttf",
         "Arial Bold" => r"C:\Windows\Fonts\arialbd.ttf",
@@ -24,7 +34,12 @@ pub fn load(name: &str) -> Result<FontArc> {
         r"C:\Windows\Fonts\arial.ttf",
     ] {
         if let Ok(bytes) = std::fs::read(path) {
-            return FontArc::try_from_vec(bytes).context("Invalid Windows font");
+            let font = FontArc::try_from_vec(bytes).context("Invalid Windows font")?;
+            FONT_CACHE
+                .lock()
+                .expect("font cache poisoned")
+                .insert(name.to_owned(), font.clone());
+            return Ok(font);
         }
     }
     anyhow::bail!("No supported Windows font found (Segoe UI/Arial)")

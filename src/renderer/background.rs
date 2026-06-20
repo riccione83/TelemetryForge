@@ -4,8 +4,12 @@ use image::{imageops, RgbImage};
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::{LazyLock, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+static BACKGROUND_CACHE: LazyLock<Mutex<Option<(String, RgbImage)>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 pub fn create(config: &AppConfig) -> Result<RgbImage> {
     let width = config.display.width;
@@ -16,6 +20,25 @@ pub fn create(config: &AppConfig) -> Result<RgbImage> {
     let Some(path) = path.as_deref() else {
         return Ok(canvas);
     };
+    let modified = fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+    let cache_key = format!(
+        "{}:{width}:{height}:{:?}:{modified}",
+        path.display(),
+        config.background.mode
+    );
+    if let Some((_, image)) = BACKGROUND_CACHE
+        .lock()
+        .expect("background cache poisoned")
+        .as_ref()
+        .filter(|(key, _)| key == &cache_key)
+    {
+        return Ok(image.clone());
+    }
 
     let source = image::open(path)
         .with_context(|| format!("Could not open background image {}", path.display()))?
@@ -47,6 +70,8 @@ pub fn create(config: &AppConfig) -> Result<RgbImage> {
             imageops::overlay(&mut canvas, &source, x as i64, y as i64);
         }
     }
+    *BACKGROUND_CACHE.lock().expect("background cache poisoned") =
+        Some((cache_key, canvas.clone()));
     Ok(canvas)
 }
 

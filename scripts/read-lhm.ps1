@@ -15,19 +15,6 @@ $computer.IsMotherboardEnabled = $true
 $computer.IsControllerEnabled = $true
 $computer.Open()
 
-$values = @{
-    cpu_temperature = $null
-    cpu_temperature_core = $null
-    cpu_temperature_socket = $null
-    gpu_temperature = $null
-    gpu_usage = $null
-    gpu_clock = $null
-    vram_usage = $null
-    fan_speed = $null
-}
-$cpuSocketTemperature = $null
-$cpuControlTemperature = $null
-
 function Visit-Hardware($hardware) {
     $hardware.Update()
     foreach ($sub in $hardware.SubHardware) { Visit-Hardware $sub }
@@ -60,7 +47,19 @@ function Visit-Hardware($hardware) {
     }
 }
 
-try {
+function Read-Snapshot {
+    $script:values = @{
+        cpu_temperature = $null
+        cpu_temperature_core = $null
+        cpu_temperature_socket = $null
+        gpu_temperature = $null
+        gpu_usage = $null
+        gpu_clock = $null
+        vram_usage = $null
+        fan_speed = $null
+    }
+    $script:cpuSocketTemperature = $null
+    $script:cpuControlTemperature = $null
     foreach ($hardware in $computer.Hardware) { Visit-Hardware $hardware }
     if ($null -ne $cpuSocketTemperature) {
         $values.cpu_temperature_socket = $cpuSocketTemperature
@@ -69,7 +68,22 @@ try {
         $values.cpu_temperature_core = $cpuControlTemperature
     }
     $values.cpu_temperature = $cpuControlTemperature
-    $values | ConvertTo-Json -Compress
+    return ($values | ConvertTo-Json -Compress)
+}
+
+try {
+    if ($env:TELEMETRYFORGE_PERSISTENT -eq "1") {
+        while ($null -ne ($request = [Console]::In.ReadLine())) {
+            if ($request -eq "quit") { break }
+            if ($request -eq "read") {
+                [Console]::Out.WriteLine((Read-Snapshot))
+                [Console]::Out.Flush()
+            }
+        }
+    }
+    else {
+        Read-Snapshot
+    }
 }
 finally {
     $computer.Close()

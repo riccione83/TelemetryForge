@@ -1,7 +1,12 @@
 use super::model::SensorSnapshot;
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use std::{os::windows::process::CommandExt, path::Path, process::Command};
+use std::{
+    io::{BufRead, BufReader, Write},
+    os::windows::process::CommandExt,
+    path::Path,
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+};
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -17,8 +22,69 @@ struct LhmOutput {
     fan_speed: Option<f32>,
 }
 
-pub fn read(dll: &Path) -> Result<SensorSnapshot> {
-    let script = include_str!("../../scripts/read-lhm.ps1");
+pub struct Reader {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+}
+
+impl Reader {
+    pub fn start(dll: &Path) -> Result<Self> {
+        let script = include_str!("../../scripts/read-lhm.ps1");
+        let shell = powershell();
+        let mut command = Command::new(shell);
+        command
+            .creation_flags(CREATE_NO_WINDOW)
+            .env("TURZX_LHM_DLL", dll)
+            .env("TELEMETRYFORGE_PERSISTENT", "1")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script,
+            ]);
+        let mut child = command
+            .spawn()
+            .context("Could not start the LibreHardwareMonitor bridge")?;
+        let stdin = child.stdin.take().context("Bridge stdin is unavailable")?;
+        let stdout = child
+            .stdout
+            .take()
+            .context("Bridge stdout is unavailable")?;
+        Ok(Self {
+            child,
+            stdin,
+            stdout: BufReader::new(stdout),
+        })
+    }
+
+    pub fn read(&mut self) -> Result<SensorSnapshot> {
+        self.stdin.write_all(b"read\n")?;
+        self.stdin.flush()?;
+        let mut line = String::new();
+        let size = self.stdout.read_line(&mut line)?;
+        if size == 0 {
+            anyhow::bail!("LibreHardwareMonitor bridge stopped unexpectedly");
+        }
+        parse(&line)
+    }
+}
+
+impl Drop for Reader {
+    fn drop(&mut self) {
+        let _ = self.stdin.write_all(b"quit\n");
+        let _ = self.stdin.flush();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn powershell() -> &'static str {
     let mut probe = Command::new("pwsh.exe");
     probe.creation_flags(CREATE_NO_WINDOW).args([
         "-NoProfile",
@@ -26,36 +92,15 @@ pub fn read(dll: &Path) -> Result<SensorSnapshot> {
         "-Command",
         "exit 0",
     ]);
-    let shell = if probe.status().is_ok() {
+    if probe.status().is_ok() {
         "pwsh.exe"
     } else {
         "powershell.exe"
-    };
-    let mut command = Command::new(shell);
-    command
-        .creation_flags(CREATE_NO_WINDOW)
-        .env("TURZX_LHM_DLL", dll)
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            script,
-        ]);
-    let output = command
-        .output()
-        .context("Could not start the LibreHardwareMonitor bridge")?;
-    if !output.status.success() {
-        anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr));
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json = stdout
-        .lines()
-        .rev()
-        .find(|line| line.trim_start().starts_with('{'))
-        .context("LibreHardwareMonitor did not return JSON")?;
-    let parsed: LhmOutput = serde_json::from_str(json)?;
+}
+
+fn parse(json: &str) -> Result<SensorSnapshot> {
+    let parsed: LhmOutput = serde_json::from_str(json.trim())?;
     Ok(SensorSnapshot {
         cpu_temperature: parsed.cpu_temperature,
         cpu_temperature_core: parsed.cpu_temperature_core,

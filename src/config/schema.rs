@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppConfig {
     pub display: DisplayConfig,
@@ -13,7 +13,7 @@ pub struct AppConfig {
     pub cpu_temperature_source: CpuTemperatureSource,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CpuTemperatureSource {
     Auto,
@@ -21,7 +21,7 @@ pub enum CpuTemperatureSource {
     Socket,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DisplayConfig {
     pub model: String,
@@ -32,7 +32,7 @@ pub struct DisplayConfig {
     pub brightness: u8,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Orientation {
     Portrait,
@@ -41,7 +41,7 @@ pub enum Orientation {
     ReverseLandscape,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BackgroundConfig {
     pub source: BackgroundSource,
@@ -52,7 +52,7 @@ pub struct BackgroundConfig {
     pub colour: String,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BackgroundSource {
     Colour,
@@ -60,7 +60,7 @@ pub enum BackgroundSource {
     Folder,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BackgroundMode {
     Contain,
@@ -69,7 +69,7 @@ pub enum BackgroundMode {
     Centre,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ThemeConfig {
     pub name: String,
@@ -78,7 +78,7 @@ pub struct ThemeConfig {
     pub panel: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WidgetConfig {
     pub kind: WidgetKind,
@@ -109,7 +109,7 @@ pub struct WidgetConfig {
     pub label_format: String,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum WidgetKind {
     CpuTemperature,
@@ -129,7 +129,7 @@ pub enum WidgetKind {
     Text,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum WidgetRenderMode {
     Text,

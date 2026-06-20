@@ -57,20 +57,21 @@ pub fn run() {
             let show = MenuItem::with_id(app, "show", "Open TelemetryForge", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
-            TrayIconBuilder::new()
-                .menu(&menu)
-                .tooltip("TelemetryForge")
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+            let mut tray = TrayIconBuilder::new().menu(&menu).tooltip("TelemetryForge");
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+            tray.on_menu_event(|app, event| match event.id.as_ref() {
+                "show" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
                     }
-                    "quit" => app.exit(0),
-                    _ => {}
-                })
-                .build(app)?;
+                }
+                "quit" => app.exit(0),
+                _ => {}
+            })
+            .build(app)?;
 
             if std::env::args().any(|arg| arg == "--minimized") {
                 if let Some(window) = app.get_webview_window("main") {

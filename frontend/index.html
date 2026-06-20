@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TelemetryForge</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">TURZX / TURING 3.5"</p>
+      <h1>TelemetryForge</h1>
+    </div>
+    <div class="actions">
+      <label class="language-picker"><span data-i18n="language">Language</span>
+        <select id="language"><option value="en">English</option><option value="it">Italiano</option></select>
+      </label>
+      <span id="status" data-i18n="loading">Loading…</span>
+      <button id="stop" class="secondary">Stop</button>
+      <button id="start" data-i18n="startRendering">Start rendering</button>
+    </div>
+  </header>
+  <main>
+    <section class="preview-card">
+      <div class="preview-head">
+        <h2 data-i18n="livePreview">Live preview</h2>
+        <div class="actions">
+          <button id="test-sensors" class="secondary" data-i18n="testSensors">Test sensors</button>
+          <button id="test-display" class="secondary">Test RGB</button>
+          <button id="send-once" class="secondary" data-i18n="sendFrame">Send frame</button>
+        </div>
+      </div>
+      <div class="screen" id="screen">
+        <img id="preview" alt="Display preview" data-i18n-alt="previewAlt" />
+        <div id="widget-overlay"></div>
+      </div>
+      <p class="hint" data-i18n="editorHint">Drag to move. Drag on the background to select multiple objects, or use Ctrl+click. Right-click to align.</p>
+      <p id="error"></p>
+    </section>
+    <section class="editor">
+      <div class="card">
+        <div class="preview-head">
+          <h2>Screen</h2>
+          <span id="screen-state" class="muted" data-i18n="currentConfiguration">Current configuration</span>
+        </div>
+        <div class="profile-row">
+          <select id="screen-list">
+            <option value="" data-i18n="selectScreen">Select a screen…</option>
+          </select>
+          <button id="load-screen" class="secondary" data-i18n="load">Load</button>
+          <button id="save-screen" data-i18n="saveAs">Save as</button>
+          <button id="new-screen" class="secondary" data-i18n="new">New</button>
+          <button id="delete-screen" class="danger" data-i18n="delete">Delete</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Display</h2>
+        <div class="grid">
+          <label><span data-i18n="comPort">COM port</span>
+            <div class="port-row">
+              <input id="port" list="port-list" placeholder="AUTO or COM3" data-i18n-placeholder="comPlaceholder" />
+              <datalist id="port-list"></datalist>
+              <button id="refresh-ports" type="button" class="secondary" title="Refresh COM ports" data-i18n-title="refreshPorts">↻</button>
+            </div>
+          </label>
+          <label><span data-i18n="orientation">Orientation</span>
+            <select id="orientation">
+              <option value="landscape" data-i18n="landscape">Landscape</option>
+              <option value="reverse_landscape" data-i18n="reverseLandscape">Reverse landscape</option>
+              <option value="portrait" data-i18n="portrait">Portrait</option>
+              <option value="reverse_portrait" data-i18n="reversePortrait">Reverse portrait</option>
+            </select>
+          </label>
+          <label><span data-i18n="width">Width</span><input id="width" type="number" min="1" /></label>
+          <label><span data-i18n="height">Height</span><input id="height" type="number" min="1" /></label>
+          <label><span data-i18n="brightness">Brightness</span><input id="brightness" type="range" min="0" max="100" /></label>
+          <label><span data-i18n="frameInterval">Frame interval (ms)</span><input id="frameInterval" type="number" min="50" step="10" /></label>
+          <label class="checkline"><input id="autostart" type="checkbox" /><span data-i18n="startWithWindows">Start with Windows</span></label>
+        </div>
+      </div>
+      <div class="card">
+        <div class="preview-head">
+          <h2 data-i18n="backgroundTheme">Background and theme</h2>
+          <div class="actions">
+            <button class="secondary preset" data-preset="gaming">Gaming</button>
+            <button class="secondary preset" data-preset="minimal">Minimal</button>
+            <button class="secondary preset" data-preset="idle">Idle</button>
+            <button id="apply-neon-sample" class="secondary" data-i18n="neonSample">Neon sample</button>
+          </div>
+        </div>
+        <div class="row">
+          <input id="backgroundPath" readonly placeholder="No image selected" data-i18n-placeholder="noImage" />
+          <button id="choose-bg" class="secondary" data-i18n="chooseImage">Choose image</button>
+        </div>
+        <div class="grid">
+          <label><span data-i18n="backgroundSource">Background source</span>
+            <select id="backgroundSource">
+              <option value="colour" data-i18n="solidColour">Solid colour</option>
+              <option value="file" data-i18n="singleFile">Single file</option>
+              <option value="folder" data-i18n="slideshowFolder">Slideshow folder</option>
+            </select>
+          </label>
+          <label><span data-i18n="fitMode">Fit mode</span>
+            <select id="backgroundMode">
+              <option value="cover">Cover</option>
+              <option value="contain">Contain</option>
+              <option value="stretch">Stretch</option>
+              <option value="centre">Centre</option>
+            </select>
+          </label>
+          <label><span data-i18n="backgroundColour">Background colour</span><input id="backgroundColour" type="color" /></label>
+          <label><span data-i18n="textColour">Text colour</span><input id="foreground" type="color" /></label>
+          <label><span data-i18n="accentColour">Accent colour</span><input id="accent" type="color" /></label>
+          <label><span data-i18n="slideshowInterval">Change every (minutes)</span>
+            <input id="slideshowInterval" type="number" min="1" value="5" />
+          </label>
+        </div>
+        <div class="row">
+          <input id="backgroundFolder" readonly placeholder="No folder selected" data-i18n-placeholder="noFolder" />
+          <button id="choose-bg-folder" class="secondary" data-i18n="chooseFolder">Choose folder</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="preview-head">
+          <h2>Widget</h2>
+          <div class="actions">
+            <select id="new-widget-kind"></select>
+            <button id="add-widget" class="secondary" data-i18n="add">+ Add</button>
+            <button id="save" data-i18n="saveConfiguration">Save configuration</button>
+          </div>
+        </div>
+        <div id="widgets"></div>
+      </div>
+    </section>
+  </main>
+  <div id="object-menu" class="context-menu">
+    <button data-layout-action="align" data-i18n="alignColumn">Align in column</button>
+    <button data-layout-action="distribute" data-i18n="verticalSpacing">Distribute vertically</button>
+    <button data-layout-action="align-distribute" data-i18n="alignDistribute">Align and distribute</button>
+  </div>
+  <script src="i18n.js"></script>
+  <script src="app-v2.js"></script>
+</body>
+</html>

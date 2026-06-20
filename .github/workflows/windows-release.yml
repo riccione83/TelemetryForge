@@ -1,0 +1,69 @@
+name: Windows build and release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --lib
+
+      - name: Build release executable
+        run: cargo build --release
+
+      - name: Create SHA-256 checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash target/release/TelemetryForge.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  TelemetryForge.exe" | Set-Content target/release/TelemetryForge.exe.sha256
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TelemetryForge-windows-x64
+          path: |
+            target/release/TelemetryForge.exe
+            target/release/TelemetryForge.exe.sha256
+
+      - name: Update continuous release
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -f continuous $env:GITHUB_SHA
+          git push origin refs/tags/continuous --force
+          gh release view continuous *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create continuous --prerelease --title "Continuous Build" --notes "Latest automated Windows build from main."
+          }
+          gh release edit continuous --prerelease --title "Continuous Build" --notes "Latest automated Windows build from commit $env:GITHUB_SHA."
+          gh release upload continuous target/release/TelemetryForge.exe target/release/TelemetryForge.exe.sha256 --clobber
+
+      - name: Create versioned release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" target/release/TelemetryForge.exe target/release/TelemetryForge.exe.sha256 --generate-notes --title "TelemetryForge ${{ github.ref_name }}"

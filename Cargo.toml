@@ -1,0 +1,40 @@
+[package]
+name = "telemetry-forge"
+version = "0.1.0"
+description = "Visual telemetry dashboard editor for TURZX/Turing USB displays"
+authors = ["TelemetryForge contributors"]
+license = "MIT"
+edition = "2021"
+
+[lib]
+name = "telemetry_forge_lib"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "TelemetryForge"
+path = "src/main.rs"
+
+[build-dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "ico"] }
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+ab_glyph = "0.2"
+anyhow = "1"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif"] }
+imageproc = "0.25"
+parking_lot = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+serialport = "4"
+sysinfo = "0.37"
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-log = "2"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+tracing = "0.1"

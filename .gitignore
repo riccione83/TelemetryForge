@@ -1,0 +1,11 @@
+/target/
+/node_modules/
+/dist/
+*.log
+.turzx/
+/config.yaml
+/screens/
+/gen/
+/frontend/app.js
+/frontend/app-legacy.js
+/src/renderer/widgets.rs

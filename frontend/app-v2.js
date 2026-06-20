@@ -53,6 +53,7 @@ function bindConfig() {
   const values = {
     orientation: config.display.orientation, width: config.display.width, height: config.display.height,
     brightness: config.display.brightness, frameInterval: config.frame_interval_ms,
+    cpuTemperatureSource: config.cpu_temperature_source || "core",
     backgroundPath: config.background.path || "", backgroundMode: config.background.mode,
     backgroundSource: config.background.source || "file",
     backgroundFolder: config.background.folder || "",
@@ -379,6 +380,7 @@ function readForm() {
     width: +$("width").value, height: +$("height").value, brightness: +$("brightness").value
   });
   config.frame_interval_ms = +$("frameInterval").value;
+  config.cpu_temperature_source = $("cpuTemperatureSource").value;
   config.background.mode = $("backgroundMode").value;
   config.background.source = $("backgroundSource").value;
   config.background.folder = $("backgroundFolder").value || null;

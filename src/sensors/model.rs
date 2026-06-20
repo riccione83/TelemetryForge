@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct SensorSnapshot {
     pub cpu_temperature: Option<f32>,
+    pub cpu_temperature_core: Option<f32>,
+    pub cpu_temperature_socket: Option<f32>,
     pub cpu_usage: Option<f32>,
     pub gpu_temperature: Option<f32>,
     pub gpu_usage: Option<f32>,

@@ -8,6 +8,8 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 #[derive(Deserialize)]
 struct LhmOutput {
     cpu_temperature: Option<f32>,
+    cpu_temperature_core: Option<f32>,
+    cpu_temperature_socket: Option<f32>,
     gpu_temperature: Option<f32>,
     gpu_usage: Option<f32>,
     gpu_clock: Option<f32>,
@@ -56,6 +58,8 @@ pub fn read(dll: &Path) -> Result<SensorSnapshot> {
     let parsed: LhmOutput = serde_json::from_str(json)?;
     Ok(SensorSnapshot {
         cpu_temperature: parsed.cpu_temperature,
+        cpu_temperature_core: parsed.cpu_temperature_core,
+        cpu_temperature_socket: parsed.cpu_temperature_socket,
         gpu_temperature: parsed.gpu_temperature,
         gpu_usage: parsed.gpu_usage,
         gpu_clock: parsed.gpu_clock,

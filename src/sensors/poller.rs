@@ -1,8 +1,12 @@
 use super::{libre_hardware_monitor, model::SensorSnapshot};
+use crate::config::schema::CpuTemperatureSource;
 use std::path::Path;
 use sysinfo::{CpuRefreshKind, Disks, MemoryRefreshKind, Networks, RefreshKind, System};
 
-pub fn read_snapshot(lhm_dll: Option<&str>) -> SensorSnapshot {
+pub fn read_snapshot(
+    lhm_dll: Option<&str>,
+    cpu_temperature_source: CpuTemperatureSource,
+) -> SensorSnapshot {
     let mut system = System::new_with_specifics(
         RefreshKind::nothing()
             .with_cpu(CpuRefreshKind::everything())
@@ -66,7 +70,17 @@ pub fn read_snapshot(lhm_dll: Option<&str>) -> SensorSnapshot {
     {
         match libre_hardware_monitor::read(Path::new(path)) {
             Ok(lhm) => {
-                snapshot.cpu_temperature = lhm.cpu_temperature;
+                snapshot.cpu_temperature_core = lhm.cpu_temperature_core;
+                snapshot.cpu_temperature_socket = lhm.cpu_temperature_socket;
+                snapshot.cpu_temperature = match cpu_temperature_source {
+                    CpuTemperatureSource::Socket => {
+                        lhm.cpu_temperature_socket.or(lhm.cpu_temperature_core)
+                    }
+                    CpuTemperatureSource::Auto | CpuTemperatureSource::Core => lhm
+                        .cpu_temperature_core
+                        .or(lhm.cpu_temperature_socket)
+                        .or(lhm.cpu_temperature),
+                };
                 snapshot.gpu_temperature = lhm.gpu_temperature;
                 snapshot.gpu_usage = lhm.gpu_usage;
                 snapshot.gpu_clock = lhm.gpu_clock;

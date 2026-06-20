@@ -76,6 +76,13 @@
           <label><span data-i18n="height">Height</span><input id="height" type="number" min="1" /></label>
           <label><span data-i18n="brightness">Brightness</span><input id="brightness" type="range" min="0" max="100" /></label>
           <label><span data-i18n="frameInterval">Frame interval (ms)</span><input id="frameInterval" type="number" min="50" step="10" /></label>
+          <label><span data-i18n="cpuTemperatureSource">CPU temperature source</span>
+            <select id="cpuTemperatureSource">
+              <option value="core" data-i18n="cpuCoreTemperature">Core / Tctl-Tdie</option>
+              <option value="socket" data-i18n="cpuSocketTemperature">CPU socket</option>
+              <option value="auto" data-i18n="automatic">Automatic</option>
+            </select>
+          </label>
           <label class="checkline"><input id="autostart" type="checkbox" /><span data-i18n="startWithWindows">Start with Windows</span></label>
         </div>
       </div>

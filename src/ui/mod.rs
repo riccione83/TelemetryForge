@@ -190,7 +190,10 @@ pub fn preview_config(state: State<AppState>, config: AppConfig) -> Result<Strin
 #[tauri::command]
 pub fn test_sensors(state: State<AppState>) -> crate::sensors::model::SensorSnapshot {
     let config = state.config.read().clone();
-    let snapshot = poller::read_snapshot(config.libre_hardware_monitor_dll.as_deref());
+    let snapshot = poller::read_snapshot(
+        config.libre_hardware_monitor_dll.as_deref(),
+        config.cpu_temperature_source,
+    );
     *state.sensors.write() = snapshot.clone();
     snapshot
 }
@@ -219,7 +222,10 @@ pub fn list_displays() -> Result<Vec<display_driver::detection::DisplayPort>, St
 #[tauri::command]
 pub fn render_once(state: State<AppState>) -> Result<(), String> {
     let config = state.config.read().clone();
-    let snapshot = poller::read_snapshot(config.libre_hardware_monitor_dll.as_deref());
+    let snapshot = poller::read_snapshot(
+        config.libre_hardware_monitor_dll.as_deref(),
+        config.cpu_temperature_source,
+    );
     let image = renderer::render(&config, &snapshot).map_err(|e| e.to_string())?;
     display_driver::send_frame(&config.display, &image).map_err(|e| e.to_string())?;
     *state.sensors.write() = snapshot;
@@ -280,7 +286,10 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
         .spawn(move || {
             let initial = config.read().clone();
             let mut session = display_driver::DisplaySession::connect(&initial.display).ok();
-            let mut target = poller::read_snapshot(initial.libre_hardware_monitor_dll.as_deref());
+            let mut target = poller::read_snapshot(
+                initial.libre_hardware_monitor_dll.as_deref(),
+                initial.cpu_temperature_source,
+            );
             let mut displayed = target.clone();
             let mut previous_frame: Option<RgbImage> = None;
             let mut last_sensor_poll = Instant::now();
@@ -290,8 +299,10 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
                 if last_sensor_poll.elapsed()
                     >= Duration::from_millis(current.sensor_poll_ms.max(250))
                 {
-                    let mut next =
-                        poller::read_snapshot(current.libre_hardware_monitor_dll.as_deref());
+                    let mut next = poller::read_snapshot(
+                        current.libre_hardware_monitor_dll.as_deref(),
+                        current.cpu_temperature_source,
+                    );
                     update_histories(&mut next, &target, 120);
                     target = next;
                     last_sensor_poll = Instant::now();
@@ -351,6 +362,16 @@ fn interpolate_snapshot(
         }
     }
     blend(&mut current.cpu_temperature, target.cpu_temperature, amount);
+    blend(
+        &mut current.cpu_temperature_core,
+        target.cpu_temperature_core,
+        amount,
+    );
+    blend(
+        &mut current.cpu_temperature_socket,
+        target.cpu_temperature_socket,
+        amount,
+    );
     blend(&mut current.cpu_usage, target.cpu_usage, amount);
     blend(&mut current.gpu_temperature, target.gpu_temperature, amount);
     blend(&mut current.gpu_usage, target.gpu_usage, amount);

@@ -17,6 +17,8 @@ $computer.Open()
 
 $values = @{
     cpu_temperature = $null
+    cpu_temperature_core = $null
+    cpu_temperature_socket = $null
     gpu_temperature = $null
     gpu_usage = $null
     gpu_clock = $null
@@ -61,11 +63,12 @@ function Visit-Hardware($hardware) {
 try {
     foreach ($hardware in $computer.Hardware) { Visit-Hardware $hardware }
     if ($null -ne $cpuSocketTemperature) {
-        $values.cpu_temperature = $cpuSocketTemperature
+        $values.cpu_temperature_socket = $cpuSocketTemperature
     }
-    elseif ($null -ne $cpuControlTemperature) {
-        $values.cpu_temperature = $cpuControlTemperature
+    if ($null -ne $cpuControlTemperature) {
+        $values.cpu_temperature_core = $cpuControlTemperature
     }
+    $values.cpu_temperature = $cpuControlTemperature
     $values | ConvertTo-Json -Compress
 }
 finally {

@@ -10,6 +10,15 @@ pub struct AppConfig {
     pub sensor_poll_ms: u64,
     pub frame_interval_ms: u64,
     pub libre_hardware_monitor_dll: Option<String>,
+    pub cpu_temperature_source: CpuTemperatureSource,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CpuTemperatureSource {
+    Auto,
+    Core,
+    Socket,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,6 +153,7 @@ impl Default for AppConfig {
             sensor_poll_ms: 1000,
             frame_interval_ms: 1000,
             libre_hardware_monitor_dll: None,
+            cpu_temperature_source: CpuTemperatureSource::Core,
         }
     }
 }
@@ -267,6 +277,12 @@ impl Default for WidgetKind {
 impl Default for WidgetRenderMode {
     fn default() -> Self {
         Self::Text
+    }
+}
+
+impl Default for CpuTemperatureSource {
+    fn default() -> Self {
+        Self::Core
     }
 }
 

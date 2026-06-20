@@ -42,6 +42,7 @@ impl SensorPoller {
         &mut self,
         lhm_dll: Option<&str>,
         cpu_temperature_source: CpuTemperatureSource,
+        fan_sensor: Option<&str>,
     ) -> SensorSnapshot {
         self.system.refresh_cpu_usage();
         self.system.refresh_memory();
@@ -82,9 +83,11 @@ impl SensorPoller {
             cpu_temperature_core: hardware.cpu_temperature_core,
             cpu_temperature_socket: hardware.cpu_temperature_socket,
             cpu_usage: Some(self.system.global_cpu_usage()),
+            cpu_clock: hardware.cpu_clock,
             gpu_temperature: hardware.gpu_temperature,
             gpu_usage: hardware.gpu_usage,
             gpu_clock: hardware.gpu_clock,
+            gpu_power: hardware.gpu_power,
             ram_usage: if self.system.total_memory() > 0 {
                 Some(self.system.used_memory() as f32 / self.system.total_memory() as f32 * 100.0)
             } else {
@@ -94,7 +97,16 @@ impl SensorPoller {
             disk_usage,
             network_upload: Some(network_upload),
             network_download: Some(network_download),
-            fan_speed: hardware.fan_speed,
+            fan_speed: fan_sensor
+                .and_then(|id| {
+                    hardware
+                        .fan_sensors
+                        .iter()
+                        .find(|sensor| sensor.id == id)
+                        .map(|sensor| sensor.value)
+                })
+                .or(hardware.fan_speed),
+            fan_sensors: hardware.fan_sensors.clone(),
             ..Default::default()
         }
     }
@@ -149,10 +161,11 @@ impl Default for SensorPoller {
 pub fn read_snapshot(
     lhm_dll: Option<&str>,
     cpu_temperature_source: CpuTemperatureSource,
+    fan_sensor: Option<&str>,
 ) -> SensorSnapshot {
     let mut poller = SensorPoller::new();
     std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-    poller.read(lhm_dll, cpu_temperature_source)
+    poller.read(lhm_dll, cpu_temperature_source, fan_sensor)
 }
 
 fn resolve_lhm_path(configured_path: Option<&str>) -> Option<PathBuf> {

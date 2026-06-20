@@ -11,6 +11,7 @@ pub struct AppConfig {
     pub frame_interval_ms: u64,
     pub libre_hardware_monitor_dll: Option<String>,
     pub cpu_temperature_source: CpuTemperatureSource,
+    pub fan_sensor: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +96,8 @@ pub struct WidgetConfig {
     pub colour: String,
     pub secondary_colour: String,
     pub opacity: f32,
+    pub graph_background_colour: String,
+    pub graph_background_opacity: f32,
     pub glow: u8,
     pub shadow: u8,
     pub use_thresholds: bool,
@@ -114,9 +117,11 @@ pub struct WidgetConfig {
 pub enum WidgetKind {
     CpuTemperature,
     CpuUsage,
+    CpuClock,
     GpuTemperature,
     GpuUsage,
     GpuClock,
+    GpuPower,
     RamUsage,
     VramUsage,
     DiskUsage,
@@ -154,6 +159,7 @@ impl Default for AppConfig {
             frame_interval_ms: 1000,
             libre_hardware_monitor_dll: None,
             cpu_temperature_source: CpuTemperatureSource::Core,
+            fan_sensor: None,
         }
     }
 }
@@ -218,6 +224,8 @@ impl WidgetConfig {
             colour: "#f3f7ff".into(),
             secondary_colour: "#64d8cb".into(),
             opacity: 1.0,
+            graph_background_colour: "#000000".into(),
+            graph_background_opacity: 0.0,
             glow: 0,
             shadow: 0,
             use_thresholds: false,
@@ -295,6 +303,8 @@ mod tests {
         let mut widget = WidgetConfig::new(WidgetKind::CpuUsage, 10, 20, "{value}");
         widget.render_mode = WidgetRenderMode::Graph;
         widget.opacity = 0.75;
+        widget.graph_background_colour = "#123456".into();
+        widget.graph_background_opacity = 0.45;
         widget.glow = 6;
         widget.shadow = 3;
         let yaml = serde_yaml::to_string(&widget).unwrap();
@@ -303,5 +313,19 @@ mod tests {
         assert_eq!(decoded.glow, 6);
         assert_eq!(decoded.shadow, 3);
         assert!((decoded.opacity - 0.75).abs() < f32::EPSILON);
+        assert_eq!(decoded.graph_background_colour, "#123456");
+        assert!((decoded.graph_background_opacity - 0.45).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn legacy_widget_gets_transparent_graph_background_defaults() {
+        let yaml = r#"
+kind: cpu_usage
+render_mode: graph
+enabled: true
+"#;
+        let decoded: WidgetConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(decoded.graph_background_colour, "#000000");
+        assert_eq!(decoded.graph_background_opacity, 0.0);
     }
 }

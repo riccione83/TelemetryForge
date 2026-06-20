@@ -72,6 +72,7 @@ pub fn new_screen(state: State<AppState>, name: String) -> Result<AppConfig, Str
     let mut config = AppConfig::default();
     config.display = current.display;
     config.libre_hardware_monitor_dll = current.libre_hardware_monitor_dll;
+    config.fan_sensor = current.fan_sensor;
     config.widgets.clear();
     let path = persistence::profile_path(&state.config_path, &name).map_err(|e| e.to_string())?;
     if path.exists() {
@@ -193,6 +194,7 @@ pub fn test_sensors(state: State<AppState>) -> crate::sensors::model::SensorSnap
     let snapshot = poller::read_snapshot(
         config.libre_hardware_monitor_dll.as_deref(),
         config.cpu_temperature_source,
+        config.fan_sensor.as_deref(),
     );
     *state.sensors.write() = snapshot.clone();
     snapshot
@@ -225,6 +227,7 @@ pub fn render_once(state: State<AppState>) -> Result<(), String> {
     let snapshot = poller::read_snapshot(
         config.libre_hardware_monitor_dll.as_deref(),
         config.cpu_temperature_source,
+        config.fan_sensor.as_deref(),
     );
     let image = renderer::render(&config, &snapshot).map_err(|e| e.to_string())?;
     display_driver::send_frame(&config.display, &image).map_err(|e| e.to_string())?;
@@ -291,6 +294,7 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
             let mut target = sensor_poller.read(
                 initial.libre_hardware_monitor_dll.as_deref(),
                 initial.cpu_temperature_source,
+                initial.fan_sensor.as_deref(),
             );
             let mut displayed = target.clone();
             let mut previous_frame: Option<RgbImage> = None;
@@ -307,6 +311,7 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
                     let mut next = sensor_poller.read(
                         current.libre_hardware_monitor_dll.as_deref(),
                         current.cpu_temperature_source,
+                        current.fan_sensor.as_deref(),
                     );
                     update_histories(&mut next, &target, 120);
                     target = next;
@@ -398,9 +403,11 @@ fn interpolate_snapshot(
         amount,
     );
     changed |= blend(&mut current.cpu_usage, target.cpu_usage, amount);
+    changed |= blend(&mut current.cpu_clock, target.cpu_clock, amount);
     changed |= blend(&mut current.gpu_temperature, target.gpu_temperature, amount);
     changed |= blend(&mut current.gpu_usage, target.gpu_usage, amount);
     changed |= blend(&mut current.gpu_clock, target.gpu_clock, amount);
+    changed |= blend(&mut current.gpu_power, target.gpu_power, amount);
     changed |= blend(&mut current.ram_usage, target.ram_usage, amount);
     changed |= blend(&mut current.vram_usage, target.vram_usage, amount);
     changed |= blend(&mut current.disk_usage, target.disk_usage, amount);
@@ -419,6 +426,12 @@ fn interpolate_snapshot(
         current.history_gpu.clone_from(&target.history_gpu);
         changed = true;
     }
+    if current.history_gpu_power != target.history_gpu_power {
+        current
+            .history_gpu_power
+            .clone_from(&target.history_gpu_power);
+        changed = true;
+    }
     if current.history_network_upload != target.history_network_upload {
         current
             .history_network_upload
@@ -431,6 +444,7 @@ fn interpolate_snapshot(
             .clone_from(&target.history_network_download);
         changed = true;
     }
+    current.fan_sensors.clone_from(&target.fan_sensors);
     changed
 }
 
@@ -485,6 +499,7 @@ fn update_histories(
     }
     next.history_cpu = append(previous.history_cpu.clone(), next.cpu_usage, limit);
     next.history_gpu = append(previous.history_gpu.clone(), next.gpu_usage, limit);
+    next.history_gpu_power = append(previous.history_gpu_power.clone(), next.gpu_power, limit);
     next.history_network_upload = append(
         previous.history_network_upload.clone(),
         next.network_upload,

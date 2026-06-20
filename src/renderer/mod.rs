@@ -60,9 +60,11 @@ fn numeric(kind: WidgetKind, sensors: &SensorSnapshot) -> Option<f32> {
     match kind {
         WidgetKind::CpuTemperature => sensors.cpu_temperature,
         WidgetKind::CpuUsage => sensors.cpu_usage,
+        WidgetKind::CpuClock => sensors.cpu_clock,
         WidgetKind::GpuTemperature => sensors.gpu_temperature,
         WidgetKind::GpuUsage => sensors.gpu_usage,
         WidgetKind::GpuClock => sensors.gpu_clock,
+        WidgetKind::GpuPower => sensors.gpu_power,
         WidgetKind::RamUsage => sensors.ram_usage,
         WidgetKind::VramUsage => sensors.vram_usage,
         WidgetKind::DiskUsage => sensors.disk_usage,
@@ -75,6 +77,8 @@ fn numeric(kind: WidgetKind, sensors: &SensorSnapshot) -> Option<f32> {
 
 fn maximum(kind: WidgetKind) -> f32 {
     match kind {
+        WidgetKind::CpuClock => 6000.0,
+        WidgetKind::GpuPower => 600.0,
         WidgetKind::GpuClock | WidgetKind::FanSpeed => 3000.0,
         WidgetKind::NetworkUpload | WidgetKind::NetworkDownload => 10000.0,
         _ => 100.0,
@@ -83,10 +87,13 @@ fn maximum(kind: WidgetKind) -> f32 {
 
 fn history(kind: WidgetKind, sensors: &SensorSnapshot) -> &[f32] {
     match kind {
-        WidgetKind::CpuUsage | WidgetKind::CpuTemperature => &sensors.history_cpu,
+        WidgetKind::CpuUsage | WidgetKind::CpuTemperature | WidgetKind::CpuClock => {
+            &sensors.history_cpu
+        }
         WidgetKind::GpuUsage | WidgetKind::GpuTemperature | WidgetKind::GpuClock => {
             &sensors.history_gpu
         }
+        WidgetKind::GpuPower => &sensors.history_gpu_power,
         WidgetKind::NetworkUpload => &sensors.history_network_upload,
         WidgetKind::NetworkDownload => &sensors.history_network_download,
         _ => &[],

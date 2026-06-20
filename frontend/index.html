@@ -17,8 +17,7 @@
         <select id="language"><option value="en">English</option><option value="it">Italiano</option></select>
       </label>
       <span id="status" data-i18n="loading">Loading…</span>
-      <button id="stop" class="secondary">Stop</button>
-      <button id="start" data-i18n="startRendering">Start rendering</button>
+      <button id="render-toggle" data-i18n="startRendering">Start rendering</button>
     </div>
   </header>
   <main>
@@ -26,6 +25,7 @@
       <div class="preview-head">
         <h2 data-i18n="livePreview">Live preview</h2>
         <div class="actions">
+          <button id="fullscreen-preview" class="secondary" data-i18n="fullscreenPreview">Full screen</button>
           <button id="test-sensors" class="secondary" data-i18n="testSensors">Test sensors</button>
           <button id="test-display" class="secondary">Test RGB</button>
           <button id="send-once" class="secondary" data-i18n="sendFrame">Send frame</button>
@@ -83,6 +83,11 @@
               <option value="auto" data-i18n="automatic">Automatic</option>
             </select>
           </label>
+          <label><span data-i18n="fanSensor">Fan sensor</span>
+            <select id="fanSensor">
+              <option value="" data-i18n="automatic">Automatic</option>
+            </select>
+          </label>
           <label class="checkline"><input id="autostart" type="checkbox" /><span data-i18n="startWithWindows">Start with Windows</span></label>
         </div>
       </div>
@@ -116,9 +121,9 @@
               <option value="centre">Centre</option>
             </select>
           </label>
-          <label><span data-i18n="backgroundColour">Background colour</span><input id="backgroundColour" type="color" /></label>
-          <label><span data-i18n="textColour">Text colour</span><input id="foreground" type="color" /></label>
-          <label><span data-i18n="accentColour">Accent colour</span><input id="accent" type="color" /></label>
+          <label class="colour-field"><span data-i18n="backgroundColour">Background colour</span><div class="colour-control"><input id="backgroundColour" type="color" /><output></output></div></label>
+          <label class="colour-field"><span data-i18n="textColour">Text colour</span><div class="colour-control"><input id="foreground" type="color" /><output></output></div></label>
+          <label class="colour-field"><span data-i18n="accentColour">Accent colour</span><div class="colour-control"><input id="accent" type="color" /><output></output></div></label>
           <label><span data-i18n="slideshowInterval">Change every (minutes)</span>
             <input id="slideshowInterval" type="number" min="1" value="5" />
           </label>
@@ -132,6 +137,8 @@
         <div class="preview-head">
           <h2>Widget</h2>
           <div class="actions">
+            <button id="collapse-widgets" class="secondary compact" data-i18n="collapseAll">Collapse all</button>
+            <button id="expand-widgets" class="secondary compact" data-i18n="expandAll">Expand all</button>
             <select id="new-widget-kind"></select>
             <button id="add-widget" class="secondary" data-i18n="add">+ Add</button>
             <button id="save" data-i18n="saveConfiguration">Save configuration</button>

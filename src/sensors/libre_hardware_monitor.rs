@@ -1,4 +1,4 @@
-use super::model::SensorSnapshot;
+use super::model::{NamedSensor, SensorSnapshot};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::{
@@ -15,11 +15,15 @@ struct LhmOutput {
     cpu_temperature: Option<f32>,
     cpu_temperature_core: Option<f32>,
     cpu_temperature_socket: Option<f32>,
+    cpu_clock: Option<f32>,
     gpu_temperature: Option<f32>,
     gpu_usage: Option<f32>,
     gpu_clock: Option<f32>,
+    gpu_power: Option<f32>,
     vram_usage: Option<f32>,
     fan_speed: Option<f32>,
+    #[serde(default)]
+    fan_sensors: Vec<NamedSensor>,
 }
 
 pub struct Reader {
@@ -105,11 +109,14 @@ fn parse(json: &str) -> Result<SensorSnapshot> {
         cpu_temperature: parsed.cpu_temperature,
         cpu_temperature_core: parsed.cpu_temperature_core,
         cpu_temperature_socket: parsed.cpu_temperature_socket,
+        cpu_clock: parsed.cpu_clock,
         gpu_temperature: parsed.gpu_temperature,
         gpu_usage: parsed.gpu_usage,
         gpu_clock: parsed.gpu_clock,
+        gpu_power: parsed.gpu_power,
         vram_usage: parsed.vram_usage,
         fan_speed: parsed.fan_speed,
+        fan_sensors: parsed.fan_sensors,
         ..Default::default()
     })
 }

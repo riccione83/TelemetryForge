@@ -49,6 +49,7 @@ pub fn draw_all(image: &mut RgbImage, config: &AppConfig, sensors: &SensorSnapsh
                 secondary,
             ),
             WidgetRenderMode::Graph => graph(
+                image,
                 &mut layer,
                 widget,
                 history(widget.kind, sensors),
@@ -133,8 +134,40 @@ fn circle(layer: &mut RgbaImage, w: &WidgetConfig, ratio: f32, a: Rgba<u8>, b: R
     }
 }
 
-fn graph(layer: &mut RgbaImage, w: &WidgetConfig, values: &[f32], a: Rgba<u8>, b: Rgba<u8>) {
-    if values.len() < 2 || w.width < 2 || w.height < 2 {
+fn graph(
+    image: &mut RgbImage,
+    layer: &mut RgbaImage,
+    w: &WidgetConfig,
+    values: &[f32],
+    a: Rgba<u8>,
+    b: Rgba<u8>,
+) {
+    if w.width < 2 || w.height < 2 {
+        return;
+    }
+    if w.graph_background_opacity > 0.0 {
+        let colour = parse(
+            &w.graph_background_colour,
+            w.graph_background_opacity.clamp(0.0, 1.0),
+        );
+        let alpha = colour[3] as f32 / 255.0;
+        for y in w.y.max(0)..(w.y + w.height as i32).min(image.height() as i32) {
+            for x in w.x.max(0)..(w.x + w.width as i32).min(image.width() as i32) {
+                let pixel = image.get_pixel_mut(x as u32, y as u32);
+                for channel in 0..3 {
+                    pixel[channel] = (pixel[channel] as f32 * (1.0 - alpha)
+                        + colour[channel] as f32 * alpha)
+                        as u8;
+                }
+            }
+        }
+    }
+    if values.len() < 2 {
+        draw_hollow_rect_mut(
+            layer,
+            Rect::at(w.x, w.y).of_size(w.width, w.height),
+            opacity(a, 0.35),
+        );
         return;
     }
     let count = values.len().min(w.width as usize);
@@ -177,9 +210,11 @@ fn numeric(k: WidgetKind, s: &SensorSnapshot) -> Option<f32> {
     match k {
         WidgetKind::CpuTemperature => s.cpu_temperature,
         WidgetKind::CpuUsage => s.cpu_usage,
+        WidgetKind::CpuClock => s.cpu_clock,
         WidgetKind::GpuTemperature => s.gpu_temperature,
         WidgetKind::GpuUsage => s.gpu_usage,
         WidgetKind::GpuClock => s.gpu_clock,
+        WidgetKind::GpuPower => s.gpu_power,
         WidgetKind::RamUsage => s.ram_usage,
         WidgetKind::VramUsage => s.vram_usage,
         WidgetKind::DiskUsage => s.disk_usage,
@@ -202,6 +237,8 @@ fn shown(k: WidgetKind, s: &SensorSnapshot) -> String {
 }
 fn max_for(k: WidgetKind) -> f32 {
     match k {
+        WidgetKind::CpuClock => 6000.0,
+        WidgetKind::GpuPower => 600.0,
         WidgetKind::GpuClock | WidgetKind::FanSpeed => 3000.0,
         WidgetKind::NetworkUpload | WidgetKind::NetworkDownload => 10000.0,
         _ => 100.0,
@@ -212,8 +249,9 @@ fn ratio(k: WidgetKind, v: Option<f32>) -> f32 {
 }
 fn history(k: WidgetKind, s: &SensorSnapshot) -> &[f32] {
     match k {
-        WidgetKind::CpuUsage | WidgetKind::CpuTemperature => &s.history_cpu,
+        WidgetKind::CpuUsage | WidgetKind::CpuTemperature | WidgetKind::CpuClock => &s.history_cpu,
         WidgetKind::GpuUsage | WidgetKind::GpuTemperature | WidgetKind::GpuClock => &s.history_gpu,
+        WidgetKind::GpuPower => &s.history_gpu_power,
         WidgetKind::NetworkUpload => &s.history_network_upload,
         WidgetKind::NetworkDownload => &s.history_network_download,
         _ => &[],

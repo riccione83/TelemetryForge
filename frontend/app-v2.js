@@ -5,20 +5,26 @@ const $ = id => document.getElementById(id);
 const t = (key, vars) => window.TurzxI18n.t(key, vars);
 let config, currentScreen = "", selectedWidget = -1;
 let selectedWidgets = new Set();
+let collapsedWidgets = new Set();
 let previewTimer;
 let brightnessTimer;
+let previewFullscreen = false;
+let renderingActive = false;
+let renderingBusy = false;
+let previewInteractionActive = false;
+let previewRefreshPending = false;
 
 const nameKeys = {
-  cpu_temperature:"widgetCpuTemp",cpu_usage:"widgetCpuUsage",gpu_temperature:"widgetGpuTemp",
-  gpu_usage:"widgetGpuUsage",gpu_clock:"widgetGpuClock",ram_usage:"widgetRam",vram_usage:"widgetVram",
+  cpu_temperature:"widgetCpuTemp",cpu_usage:"widgetCpuUsage",cpu_clock:"widgetCpuClock",gpu_temperature:"widgetGpuTemp",
+  gpu_usage:"widgetGpuUsage",gpu_clock:"widgetGpuClock",gpu_power:"widgetGpuPower",ram_usage:"widgetRam",vram_usage:"widgetVram",
   disk_usage:"widgetDisk",network_upload:"widgetUpload",network_download:"widgetDownload",
   fan_speed:"widgetFan",clock:"widgetClock",date:"widgetDate",fps:"widgetFps",text:"widgetText"
 };
 const widgetName = kind => t(nameKeys[kind] || kind);
 const defaults = {
-  cpu_temperature: "{value}", cpu_usage: "{value}",
+  cpu_temperature: "{value}", cpu_usage: "{value}", cpu_clock: "{value}",
   gpu_temperature: "{value}", gpu_usage: "{value}",
-  gpu_clock: "{value}", ram_usage: "{value}", vram_usage: "{value}",
+  gpu_clock: "{value}", gpu_power: "{value}", ram_usage: "{value}", vram_usage: "{value}",
   disk_usage: "{value}", network_upload: "{value}", network_download: "{value}",
   fan_speed: "{value}", clock: "{value}", date: "{value}", fps: "{value}",
   text: "Testo libero"
@@ -29,6 +35,10 @@ const modeName = mode => t(modeKeys[mode] || mode);
 
 function refreshTranslatedUi() {
   window.TurzxI18n.apply();
+  if ($("fullscreen-preview")) {
+    $("fullscreen-preview").textContent = t(previewFullscreen ? "exitFullscreen" : "fullscreenPreview");
+  }
+  updateRenderButton();
   $("new-widget-kind").innerHTML = Object.keys(nameKeys)
     .map(kind => `<option value="${kind}">${widgetName(kind)}</option>`).join("");
   if (config) {
@@ -41,11 +51,14 @@ function refreshTranslatedUi() {
 
 async function boot() {
   config = await invoke("get_config");
+  collapseAllWidgets();
   refreshTranslatedUi();
   bindConfig();
   $("autostart").checked = await invoke("get_autostart").catch(() => false);
   await Promise.all([loadPorts(), loadScreens()]);
+  await loadFanSensors();
   await refreshPreview();
+  await refreshStatus();
   setInterval(refreshStatus, 1200);
 }
 
@@ -54,6 +67,7 @@ function bindConfig() {
     orientation: config.display.orientation, width: config.display.width, height: config.display.height,
     brightness: config.display.brightness, frameInterval: config.frame_interval_ms,
     cpuTemperatureSource: config.cpu_temperature_source || "core",
+    fanSensor: config.fan_sensor || "",
     backgroundPath: config.background.path || "", backgroundMode: config.background.mode,
     backgroundSource: config.background.source || "file",
     backgroundFolder: config.background.folder || "",
@@ -62,7 +76,9 @@ function bindConfig() {
     accent: config.theme.accent
   };
   Object.entries(values).forEach(([id, value]) => $(id).value = value);
+  syncColourPickers();
   $("screen").style.aspectRatio = `${config.display.width} / ${config.display.height}`;
+  $("screen").style.setProperty("--display-ratio", config.display.width / config.display.height);
   renderWidgets();
   requestAnimationFrame(renderOverlay);
 }
@@ -82,12 +98,23 @@ async function loadScreens(selected = currentScreen) {
   $("screen-state").textContent = currentScreen || t("screenCurrent");
 }
 
+async function loadFanSensors(snapshot) {
+  snapshot ||= await invoke("test_sensors").catch(() => null);
+  const sensors = snapshot?.fan_sensors || [];
+  $("fanSensor").innerHTML = `<option value="">${t("automatic")}</option>` +
+    sensors.map(sensor => `<option value="${esc(sensor.id)}">${esc(sensor.name)} — ${Math.round(sensor.value)} RPM</option>`).join("");
+  $("fanSensor").value = config.fan_sensor || "";
+}
+
 function renderWidgets() {
   $("widgets").innerHTML = config.widgets.map((w, i) => `
-    <div class="widget-card ${selectedWidgets.has(i) || selectedWidget === i ? "selected" : ""}" data-card="${i}">
+    <div class="widget-card ${collapsedWidgets.has(i) ? "collapsed" : ""} ${selectedWidgets.has(i) || selectedWidget === i ? "selected" : ""}" data-card="${i}">
       <div class="widget-title">
-        <label class="toggle"><input data-i="${i}" data-k="enabled" type="checkbox" ${w.enabled ? "checked" : ""}><strong>${esc(widgetName(w.kind))} · ${modeName(w.render_mode || "text")}</strong></label>
-        <div class="actions">
+        <div class="widget-heading" data-collapse="${i}" title="${collapsedWidgets.has(i) ? t("expand") : t("collapse")}">
+          <button class="collapse-widget" type="button" aria-label="${collapsedWidgets.has(i) ? t("expand") : t("collapse")}"></button>
+          <label class="toggle"><input data-i="${i}" data-k="enabled" type="checkbox" ${w.enabled ? "checked" : ""}><strong>${esc(widgetName(w.kind))} · ${modeName(w.render_mode || "text")}</strong></label>
+        </div>
+        <div class="actions widget-actions">
           <button class="secondary compact" data-add-bar="${i}">${t("addBar")}</button>
           <button class="secondary compact" data-add-circle="${i}">${t("addCircle")}</button>
           <button class="secondary compact" data-add-graph="${i}">${t("addGraph")}</button>
@@ -107,29 +134,46 @@ function renderWidgets() {
         <label>${t("font")}<select data-i="${i}" data-k="font">${fonts.map(font => `<option value="${font}" ${(w.font || "Segoe UI") === font ? "selected" : ""}>${font}</option>`).join("")}</select></label>
         <label>${t("fontSize")}<input data-i="${i}" data-k="font_size" type="number" min="6" value="${w.font_size}"></label>
         <label>${t("interval")}<input data-i="${i}" data-k="refresh_interval_ms" type="number" min="100" value="${w.refresh_interval_ms}"></label>
-        <label>${t("colour")}<input data-i="${i}" data-k="colour" type="color" value="${w.colour}"></label>
-        <label>${t("gradient")}<input data-i="${i}" data-k="secondary_colour" type="color" value="${w.secondary_colour || w.colour}"></label>
+        ${colourField(t("colour"), i, "colour", w.colour)}
+        ${colourField(t("gradient"), i, "secondary_colour", w.secondary_colour || w.colour)}
         <label>${t("opacity")}<input data-i="${i}" data-k="opacity" type="range" min="0.1" max="1" step="0.05" value="${w.opacity ?? 1}"></label>
+        ${(w.render_mode || "text") === "graph" ? `
+          ${colourField(t("graphBackground"), i, "graph_background_colour", w.graph_background_colour || "#000000")}
+          <label>${t("graphBackgroundOpacity")}<input data-i="${i}" data-k="graph_background_opacity" type="range" min="0" max="1" step="0.05" value="${w.graph_background_opacity ?? 0}"></label>
+        ` : ""}
         <label>${t("glow")}<input data-i="${i}" data-k="glow" type="range" min="0" max="16" value="${w.glow || 0}"></label>
         <label>${t("shadow")}<input data-i="${i}" data-k="shadow" type="range" min="0" max="16" value="${w.shadow || 0}"></label>
         <label class="toggle">${t("thresholds")}<input data-i="${i}" data-k="use_thresholds" type="checkbox" ${w.use_thresholds ? "checked" : ""}></label>
         <label>${t("warning")}<input data-i="${i}" data-k="warning_threshold" type="number" value="${w.warning_threshold ?? 70}"></label>
         <label>${t("critical")}<input data-i="${i}" data-k="critical_threshold" type="number" value="${w.critical_threshold ?? 90}"></label>
-        <label>${t("warningColour")}<input data-i="${i}" data-k="warning_colour" type="color" value="${w.warning_colour || "#ffd166"}"></label>
-        <label>${t("criticalColour")}<input data-i="${i}" data-k="critical_colour" type="color" value="${w.critical_colour || "#ff4d6d"}"></label>
+        ${colourField(t("warningColour"), i, "warning_colour", w.warning_colour || "#ffd166")}
+        ${colourField(t("criticalColour"), i, "critical_colour", w.critical_colour || "#ff4d6d")}
         <label>${t("circleThickness")}<input data-i="${i}" data-k="circle_thickness" type="number" min="1" value="${w.circle_thickness ?? 16}"></label>
         <label>${t("startAngle")}<input data-i="${i}" data-k="circle_start_angle" type="number" value="${w.circle_start_angle ?? -90}"></label>
         <label>${t("circleSweep")}<input data-i="${i}" data-k="circle_sweep_angle" type="number" min="1" max="360" value="${w.circle_sweep_angle ?? 360}"></label>
       </div>
     </div>`).join("");
   document.querySelectorAll("[data-card]").forEach(card => card.onclick = e => {
-    if (e.target.closest("button,input,select")) return;
+    if (e.target.closest("button,input,select,[data-collapse]")) return;
     selectedWidget = +card.dataset.card;
     selectedWidgets = new Set([selectedWidget]);
     renderWidgets(); renderOverlay();
   });
+  document.querySelectorAll("[data-collapse]").forEach(heading => heading.onclick = e => {
+    if (e.target.closest(".toggle")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const index = +heading.dataset.collapse;
+    if (collapsedWidgets.has(index)) collapsedWidgets.delete(index);
+    else collapsedWidgets.add(index);
+    renderWidgets();
+  });
   document.querySelectorAll("[data-delete]").forEach(button => button.onclick = () => {
-    config.widgets.splice(+button.dataset.delete, 1); selectedWidget = -1; selectedWidgets.clear();
+    const deleted = +button.dataset.delete;
+    config.widgets.splice(deleted, 1); selectedWidget = -1; selectedWidgets.clear();
+    collapsedWidgets = new Set([...collapsedWidgets]
+      .filter(index => index !== deleted)
+      .map(index => index > deleted ? index - 1 : index));
     renderWidgets(); renderOverlay();
   });
   document.querySelectorAll("[data-add-bar]").forEach(button => button.onclick = () => addVisualWidget(+button.dataset.addBar, "bar"));
@@ -138,11 +182,72 @@ function renderWidgets() {
   document.querySelectorAll("[data-i]").forEach(input => {
     const update = () => {
       readWidgetInput(input);
+      if (input.type === "color") syncColourPicker(input);
       renderOverlay();
       scheduleLivePreview();
+      if (input.dataset.k === "render_mode") renderWidgets();
     };
     input.oninput = update;
     input.onchange = update;
+  });
+  syncColourPickers();
+}
+
+function colourField(label, index, key, value) {
+  const colour = normaliseColour(value);
+  return `<label class="colour-field">${label}<div class="colour-control"><input data-i="${index}" data-k="${key}" type="color" value="${colour}"><output>${colour.toUpperCase()}</output></div></label>`;
+}
+
+function normaliseColour(value, fallback = "#ffffff") {
+  const colour = String(value || "").trim();
+  if (/^#[0-9a-f]{6}$/i.test(colour)) return colour.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(colour)) {
+    return `#${colour.slice(1).split("").map(char => char + char).join("")}`.toLowerCase();
+  }
+  return fallback;
+}
+
+function syncColourPicker(input) {
+  input.value = normaliseColour(input.value);
+  const output = input.closest(".colour-control")?.querySelector("output");
+  if (output) output.value = input.value.toUpperCase();
+}
+
+function syncColourPickers() {
+  document.querySelectorAll('input[type="color"]').forEach(syncColourPicker);
+}
+
+function setPreviewFullscreen(enabled) {
+  previewFullscreen = enabled;
+  document.body.classList.toggle("preview-fullscreen", enabled);
+  document.querySelector(".preview-card").classList.toggle("fullscreen", enabled);
+  const button = $("fullscreen-preview");
+  button.textContent = t(enabled ? "exitFullscreen" : "fullscreenPreview");
+  button.classList.toggle("danger", enabled);
+  button.classList.toggle("secondary", !enabled);
+  requestAnimationFrame(renderOverlay);
+}
+
+function collapseAllWidgets() {
+  collapsedWidgets = new Set(config.widgets.map((_, index) => index));
+}
+
+function expandAllWidgets() {
+  collapsedWidgets.clear();
+}
+
+function focusWidgetEditor(index) {
+  selectedWidget = index;
+  selectedWidgets = new Set([index]);
+  collapsedWidgets.delete(index);
+  if (previewFullscreen) setPreviewFullscreen(false);
+  renderWidgets();
+  renderOverlay();
+  requestAnimationFrame(() => {
+    document.querySelector(`[data-card="${index}"]`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "center"
+    });
   });
 }
 
@@ -154,6 +259,8 @@ function addVisualWidget(sourceIndex, renderMode) {
     left_text: "",
     right_text: "",
     label_format: "{value}",
+    graph_background_colour: "#000000",
+    graph_background_opacity: renderMode === "graph" ? 0.4 : 0,
     x: Math.min(config.display.width - 20, source.x + 20),
     y: Math.min(config.display.height - 20, source.y + 20),
     width: renderMode === "circle" ? 80 : 150,
@@ -162,6 +269,7 @@ function addVisualWidget(sourceIndex, renderMode) {
   config.widgets.push(visual);
   selectedWidget = config.widgets.length - 1;
   selectedWidgets = new Set([selectedWidget]);
+  collapsedWidgets.delete(selectedWidget);
   renderWidgets();
   renderOverlay();
   scheduleLivePreview();
@@ -176,8 +284,17 @@ function readWidgetInput(input) {
 function scheduleLivePreview() {
   clearTimeout(previewTimer);
   previewTimer = setTimeout(async () => {
+    if (previewInteractionActive) {
+      previewRefreshPending = true;
+      return;
+    }
     try {
-      $("preview").src = await invoke("preview_config", {config});
+      const preview = await invoke("preview_config", {config});
+      if (previewInteractionActive) {
+        previewRefreshPending = true;
+        return;
+      }
+      $("preview").src = preview;
       $("error").textContent = "";
     } catch (error) {
       $("error").textContent = `${t("previewError")}: ${error}`;
@@ -221,7 +338,13 @@ function renderOverlay() {
         selectedWidgets = new Set([i]);
         selectedWidget = i;
       }
+      collapsedWidgets.delete(i);
       startDrag(event);
+    };
+    el.ondblclick = event => {
+      event.preventDefault();
+      event.stopPropagation();
+      focusWidgetEditor(i);
     };
     el.oncontextmenu = event => {
       event.preventDefault();
@@ -324,6 +447,7 @@ async function applyLayout(action) {
 function startResize(e, index, el) {
   e.preventDefault();
   e.stopPropagation();
+  previewInteractionActive = true;
   const w = config.widgets[index];
   const rect = $("widget-overlay").getBoundingClientRect();
   const startX = e.clientX, startY = e.clientY, startWidth = w.width, startHeight = w.height;
@@ -339,8 +463,10 @@ function startResize(e, index, el) {
   };
   const end = async () => {
     el.onpointermove = el.onpointerup = el.onpointercancel = null;
+    previewInteractionActive = false;
     renderWidgets();
     await invoke("save_config", {config});
+    previewRefreshPending = false;
     await refreshPreview();
   };
   el.onpointerup = el.onpointercancel = end;
@@ -381,6 +507,7 @@ function readForm() {
   });
   config.frame_interval_ms = +$("frameInterval").value;
   config.cpu_temperature_source = $("cpuTemperatureSource").value;
+  config.fan_sensor = $("fanSensor").value || null;
   config.background.mode = $("backgroundMode").value;
   config.background.source = $("backgroundSource").value;
   config.background.folder = $("backgroundFolder").value || null;
@@ -396,14 +523,65 @@ async function save() {
   bindConfig(); await refreshPreview(); $("status").textContent = t("configurationSaved");
 }
 async function refreshPreview() {
-  try { $("error").textContent=""; $("preview").src=await invoke("get_preview"); requestAnimationFrame(renderOverlay); }
+  if (previewInteractionActive) {
+    previewRefreshPending = true;
+    return;
+  }
+  try {
+    $("error").textContent="";
+    const preview = await invoke("get_preview");
+    if (previewInteractionActive) {
+      previewRefreshPending = true;
+      return;
+    }
+    $("preview").src=preview;
+    previewRefreshPending = false;
+    requestAnimationFrame(renderOverlay);
+  }
   catch(e) { $("error").textContent=String(e); }
 }
 async function refreshStatus() {
   const s=await invoke("get_status");
+  renderingActive = s.running;
+  if (!renderingBusy) updateRenderButton();
   const known={"Stopped":"statusStopped","Rendering active":"statusActive","Frame sent":"statusFrameSent"};
   $("status").textContent=known[s.message]?t(known[s.message]):s.message;
   if(s.running) refreshPreview();
+}
+
+function updateRenderButton() {
+  const button = $("render-toggle");
+  if (!button) return;
+  button.disabled = renderingBusy;
+  button.classList.toggle("running", renderingActive);
+  button.textContent = t(renderingBusy
+    ? (renderingActive ? "stoppingRendering" : "startingRendering")
+    : (renderingActive ? "stopRendering" : "startRendering"));
+}
+
+async function toggleRendering() {
+  if (renderingBusy) return;
+  renderingBusy = true;
+  updateRenderButton();
+  try {
+    if (renderingActive) {
+      await invoke("stop_rendering");
+      renderingActive = false;
+      $("status").textContent = t("stopRequested");
+    } else {
+      await save();
+      await invoke("start_rendering");
+      renderingActive = true;
+    }
+    $("error").textContent = "";
+  } catch (error) {
+    $("error").textContent = renderingActive
+      ? String(error)
+      : `${t("renderStartFailed")}: ${error}`;
+  } finally {
+    renderingBusy = false;
+    await refreshStatus().catch(updateRenderButton);
+  }
 }
 const askName=(message,initial="")=>window.prompt(message,initial)?.trim()||"";
 
@@ -411,7 +589,14 @@ $("choose-bg").onclick=async()=>{const p=await invoke("select_background");if(p)
 $("choose-bg-folder").onclick=async()=>{const p=await invoke("select_background_folder");if(p){config.background.folder=p;config.background.source="folder";$("backgroundFolder").value=p;$("backgroundSource").value="folder";await save();}};
 $("backgroundSource").onchange=()=>{readForm();scheduleLivePreview();};
 $("slideshowInterval").oninput=()=>{readForm();scheduleLivePreview();};
-$("apply-neon-sample").onclick=async()=>{config=await invoke("load_neon_sample");currentScreen="";bindConfig();await refreshPreview();};
+["backgroundColour","foreground","accent"].forEach(id => {
+  $(id).oninput = () => {
+    syncColourPicker($(id));
+    readForm();
+    scheduleLivePreview();
+  };
+});
+$("apply-neon-sample").onclick=async()=>{config=await invoke("load_neon_sample");currentScreen="";collapseAllWidgets();bindConfig();await refreshPreview();};
 $("refresh-ports").onclick=loadPorts;
 $("brightness").oninput=()=>{
   config.display.brightness=+$("brightness").value;
@@ -426,17 +611,22 @@ $("brightness").oninput=()=>{
   },180);
 };
 $("save").onclick=save;
-$("add-widget").onclick=()=>{const kind=$("new-widget-kind").value;config.widgets.push({kind,render_mode:"text",enabled:true,left_text:"",right_text:"",x:20,y:20,width:180,height:42,font:"Segoe UI",font_size:24,colour:config.theme.foreground,secondary_colour:config.theme.accent,opacity:1,glow:0,shadow:0,use_thresholds:false,warning_threshold:70,critical_threshold:90,warning_colour:"#ffd166",critical_colour:"#ff4d6d",circle_thickness:16,circle_start_angle:-90,circle_sweep_angle:360,refresh_interval_ms:1000,label_format:defaults[kind]});selectedWidget=config.widgets.length-1;selectedWidgets=new Set([selectedWidget]);renderWidgets();renderOverlay();scheduleLivePreview();};
-$("new-screen").onclick=async()=>{const name=askName(t("selectNewScreen"));if(!name)return;try{config=await invoke("new_screen",{name});currentScreen=name;bindConfig();await loadScreens(name);await refreshPreview();}catch(e){$("error").textContent=String(e);}};
+$("fullscreen-preview").onclick=()=>setPreviewFullscreen(!previewFullscreen);
+$("collapse-widgets").onclick=()=>{collapseAllWidgets();renderWidgets();};
+$("expand-widgets").onclick=()=>{expandAllWidgets();renderWidgets();};
+$("add-widget").onclick=()=>{const kind=$("new-widget-kind").value;config.widgets.push({kind,render_mode:"text",enabled:true,left_text:"",right_text:"",x:20,y:20,width:180,height:42,font:"Segoe UI",font_size:24,colour:config.theme.foreground,secondary_colour:config.theme.accent,opacity:1,graph_background_colour:"#000000",graph_background_opacity:0,glow:0,shadow:0,use_thresholds:false,warning_threshold:70,critical_threshold:90,warning_colour:"#ffd166",critical_colour:"#ff4d6d",circle_thickness:16,circle_start_angle:-90,circle_sweep_angle:360,refresh_interval_ms:1000,label_format:defaults[kind]});selectedWidget=config.widgets.length-1;selectedWidgets=new Set([selectedWidget]);collapsedWidgets.delete(selectedWidget);renderWidgets();renderOverlay();scheduleLivePreview();};
+$("new-screen").onclick=async()=>{const name=askName(t("selectNewScreen"));if(!name)return;try{config=await invoke("new_screen",{name});currentScreen=name;collapseAllWidgets();bindConfig();await loadScreens(name);await refreshPreview();}catch(e){$("error").textContent=String(e);}};
 $("save-screen").onclick=async()=>{readForm();const name=askName(t("saveScreenName"),currentScreen);if(!name)return;try{await invoke("save_screen",{name,config});currentScreen=name;await loadScreens(name);$("status").textContent=t("screenSaved",{name});}catch(e){$("error").textContent=String(e);}};
-$("load-screen").onclick=async()=>{const name=$("screen-list").value;if(!name)return;config=await invoke("load_screen",{name});currentScreen=name;selectedWidget=-1;selectedWidgets.clear();bindConfig();await refreshPreview();};
+$("load-screen").onclick=async()=>{const name=$("screen-list").value;if(!name)return;config=await invoke("load_screen",{name});currentScreen=name;selectedWidget=-1;selectedWidgets.clear();collapseAllWidgets();bindConfig();await refreshPreview();};
 $("delete-screen").onclick=async()=>{const name=$("screen-list").value;if(!name||!confirm(t("deleteConfirm",{name})))return;await invoke("delete_screen",{name});if(currentScreen===name)currentScreen="";await loadScreens();};
-$("start").onclick=async()=>{try{await save();await invoke("start_rendering");}catch(e){$("error").textContent=`${t("renderStartFailed")}: ${e}`;}};
-$("stop").onclick=async()=>{await invoke("stop_rendering");$("status").textContent=t("stopRequested");};
+$("render-toggle").onclick=toggleRendering;
 $("test-display").onclick=async()=>{try{await save();$("status").textContent=await invoke("test_display");}catch(e){$("error").textContent=`${t("testFailed")}: ${e}`;}};
-$("test-sensors").onclick=async()=>{try{const s=await invoke("test_sensors");$("error").textContent="";$("status").textContent=`CPU ${fmt(s.cpu_temperature)}°C · GPU ${fmt(s.gpu_temperature)}°C / ${fmt(s.gpu_usage)}% / ${fmt(s.gpu_clock)} MHz · RAM ${fmt(s.ram_usage)}% · ${t("diskLabel")} ${fmt(s.disk_usage)}% · ${t("networkLabel")} ↓${fmt(s.network_download)} ↑${fmt(s.network_upload)} KB/s`;}catch(e){$("error").textContent=`${t("sensorTestFailed")}: ${e}`;}};
+$("test-sensors").onclick=async()=>{try{const s=await invoke("test_sensors");await loadFanSensors(s);$("error").textContent="";$("status").textContent=`CPU ${fmt(s.cpu_temperature)}°C / ${fmt(s.cpu_clock)} MHz · GPU ${fmt(s.gpu_temperature)}°C / ${fmt(s.gpu_usage)}% / ${fmt(s.gpu_clock)} MHz / ${fmt(s.gpu_power)} W · RAM ${fmt(s.ram_usage)}% · ${t("diskLabel")} ${fmt(s.disk_usage)}% · ${t("networkLabel")} ↓${fmt(s.network_download)} ↑${fmt(s.network_upload)} KB/s`;}catch(e){$("error").textContent=`${t("sensorTestFailed")}: ${e}`;}};
 $("send-once").onclick=async()=>{try{await save();await invoke("render_once");}catch(e){$("error").textContent=`${t("sendFailed")}: ${e}`;}};
 window.addEventListener("resize",renderOverlay);
+window.addEventListener("keydown", event => {
+  if (event.key === "Escape" && previewFullscreen) setPreviewFullscreen(false);
+});
 document.addEventListener("pointerdown", event => {
   if (!event.target.closest("#object-menu")) hideObjectMenu();
 });

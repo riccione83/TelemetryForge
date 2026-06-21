@@ -5,6 +5,13 @@ made to TelemetryForge.
 
 ## Unreleased
 
+### MSI Forged Core sample
+
+- Added a portable 480×320 showcase screen with CPU/GPU circles, telemetry
+  bars, historical graphs and a bundled original background.
+- Added a ready-to-import `.telemetryforge` package with no personal paths or
+  automatic rules.
+
 ### Automatic screens and transitions
 
 - Added ordered automatic rules for running processes, CPU/GPU temperature

@@ -14,6 +14,12 @@ An open-source Windows desktop application for TURZX/Turing Smart Screen
 - Automatic screen rules with fade, slide, dissolve and glitch transitions
 - English and Italian user interfaces
 
+## Sample incluso
+
+Puoi importare direttamente
+[`samples/msi-forged-core.telemetryforge`](samples/msi-forged-core.telemetryforge):
+include lo screen 480×320 **MSI Forged Core**, lo sfondo e tutti i widget.
+
 ## Quick start
 
 ```powershell
@@ -140,12 +146,12 @@ Gli sfondi supportano `contain`, `cover`, `stretch` e `centre`.
   collegato allo stesso sensore. Gli indicatori sono elementi indipendenti,
   trascinabili e ridimensionabili dalla preview.
 - Sono disponibili grafici storici CPU/GPU/rete, gradienti, glow, ombre,
-  opacità, soglie cromatiche e preset Gaming/Minimal/Idle.
+  opacità, soglie cromatiche e screen rapidi Gaming/Minimal/Idle.
 - Durante il rendering i valori vengono interpolati e il display riceve solo
   il rettangolo modificato quando è più piccolo di un frame completo.
 
-Il pulsante **Applica sample neon** carica il tema dimostrativo incluso in
-`samples\neon-telemetry.png`, ottimizzato per 480×320.
+Il sample dimostrativo **MSI Forged Core** può essere importato dal file
+`samples\msi-forged-core.telemetryforge`, ottimizzato per 480×320.
 
 ## Risoluzione dei problemi
 

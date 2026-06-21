@@ -105,6 +105,16 @@ Each widget supports:
 
 Circular gauges also support thickness, start angle and sweep angle.
 
+## Included sample
+
+The repository includes the **MSI Forged Core** 480×320 sample with its
+background, circles, bars and historical graphs. Import
+[`samples/msi-forged-core.telemetryforge`](samples/msi-forged-core.telemetryforge)
+from the Screen panel. Its editable source files are in
+[`samples/msi-forged-core`](samples/msi-forged-core).
+
+![MSI Forged Core background](samples/msi-forged-core/assets/background.png)
+
 The **System volume** widget reads the Windows default playback-device volume.
 It can be displayed as text, a bar, a circle or a historical graph without
 LibreHardwareMonitor.

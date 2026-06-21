@@ -39,7 +39,10 @@ body.preview-fullscreen { overflow: hidden; }
 #widget-overlay { z-index: 2; }
 .selection-box { position: absolute; border: 1px solid #7fffea; background: rgba(100,216,203,.16); pointer-events: none; }
 .widget-handle { position: absolute; border: 1px dashed rgba(255,255,255,.65); background: rgba(4,12,18,.14); cursor: grab; touch-action: none; }
-.widget-handle:hover, .widget-handle.selected { border: 2px solid #64d8cb; background: rgba(100,216,203,.12); }
+.widget-handle:not(.selected):hover { z-index: 1000 !important; }
+.widget-handle.selected { z-index: 1001; border: 2px solid #ffbf47; background: rgba(255,191,71,.14); box-shadow: inset 0 0 0 1px rgba(255,255,255,.15), 0 0 13px rgba(255,166,42,.6); }
+.widget-handle.selected span { color: #1a1000; background: #ffbf47; }
+.widget-handle.selected .resize-handle { z-index: 1003; border-color: #201000; background: #fff0a8; box-shadow: 0 0 0 3px rgba(255,191,71,.28), 0 0 14px rgba(255,166,42,.95); }
 .widget-handle:active { cursor: grabbing; }
 .widget-handle span { position: absolute; left: 0; top: -18px; padding: 2px 5px; border-radius: 4px; color: #08110f; background: #64d8cb; font-size: 9px; white-space: nowrap; }
 .resize-handle { position: absolute; right: -4px; bottom: -4px; width: 11px; height: 11px; border: 2px solid #06100e; border-radius: 2px; background: #64d8cb; cursor: nwse-resize; }

@@ -92,6 +92,10 @@ release.
 
 ### Editor usability
 
+- Selected preview widgets now rise above overlapping widgets, keeping their
+  resize handles accessible in dense layouts.
+- Selected widgets use a distinct amber highlight, and clicking empty preview
+  space clears the current selection.
 - Added collapsible widget configuration panels.
 - Added **Collapse all** and **Expand all** controls.
 - Widget panels start collapsed to keep large dashboards manageable.

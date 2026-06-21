@@ -451,7 +451,8 @@ function renderOverlay() {
     el.dataset.index = i;
     Object.assign(el.style, {
       left: `${w.x*sx}px`, top: `${w.y*sy}px`,
-      width: `${Math.max(w.width*sx,30)}px`, height: `${Math.max(w.height*sy,18)}px`
+      width: `${Math.max(w.width*sx,30)}px`, height: `${Math.max(w.height*sy,18)}px`,
+      zIndex: selectedWidget === i ? "1002" : selectedWidgets.has(i) ? "1001" : String(i + 1)
     });
     el.innerHTML = `<span>${esc(widgetName(w.kind))} · ${modeName(w.render_mode || "text")}</span><i class="resize-handle"></i>`;
     el.onpointerdown = event => {
@@ -470,6 +471,7 @@ function renderOverlay() {
         selectedWidget = i;
       }
       collapsedWidgets.delete(i);
+      updateOverlayStacking();
       startDrag(event);
     };
     el.ondblclick = event => {
@@ -493,6 +495,19 @@ function renderOverlay() {
   });
 }
 
+function updateOverlayStacking() {
+  const layer = $("widget-overlay");
+  if (!layer) return;
+  layer.querySelectorAll(".widget-handle").forEach(handle => {
+    const index = +handle.dataset.index;
+    const selected = selectedWidgets.has(index) || selectedWidget === index;
+    handle.classList.toggle("selected", selected);
+    handle.style.zIndex = selectedWidget === index
+      ? "1002"
+      : selectedWidgets.has(index) ? "1001" : String(index + 1);
+  });
+}
+
 function startMarquee(event) {
   if (event.target !== event.currentTarget || event.button !== 0) return;
   event.preventDefault();
@@ -502,12 +517,14 @@ function startMarquee(event) {
   const startX = event.clientX - rect.left;
   const startY = event.clientY - rect.top;
   const previous = (event.ctrlKey || event.metaKey) ? new Set(selectedWidgets) : new Set();
+  let moved = false;
   const box = document.createElement("div");
   box.className = "selection-box";
   layer.appendChild(box);
   layer.setPointerCapture(event.pointerId);
 
   const move = e => {
+    moved ||= Math.abs(e.clientX - event.clientX) > 3 || Math.abs(e.clientY - event.clientY) > 3;
     const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
     const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
     const left = Math.min(startX, x), top = Math.min(startY, y);
@@ -524,12 +541,15 @@ function startMarquee(event) {
       if (intersects) selectedWidgets.add(+handle.dataset.index);
     });
     selectedWidget = [...selectedWidgets][0] ?? -1;
-    layer.querySelectorAll(".widget-handle").forEach(handle =>
-      handle.classList.toggle("selected", selectedWidgets.has(+handle.dataset.index)));
+    updateOverlayStacking();
   };
   const end = () => {
     layer.onpointermove = layer.onpointerup = layer.onpointercancel = null;
     box.remove();
+    if (!moved && !(event.ctrlKey || event.metaKey)) {
+      selectedWidget = -1;
+      selectedWidgets.clear();
+    }
     renderWidgets();
     renderOverlay();
   };
@@ -583,6 +603,8 @@ function startResize(e, index, el) {
   const rect = $("widget-overlay").getBoundingClientRect();
   const startX = e.clientX, startY = e.clientY, startWidth = w.width, startHeight = w.height;
   selectedWidget = index;
+  selectedWidgets = new Set([index]);
+  updateOverlayStacking();
   el.setPointerCapture(e.pointerId);
   el.onpointermove = m => {
     const dx = (m.clientX-startX)*config.display.width/rect.width;
@@ -609,6 +631,7 @@ function startDrag(e) {
   const rect = $("widget-overlay").getBoundingClientRect();
   const sx = e.clientX, sy = e.clientY, ox = w.x, oy = w.y;
   selectedWidget = i;
+  updateOverlayStacking();
   const moving = selectedWidgets.has(i) && selectedWidgets.size > 1
     ? [...selectedWidgets].map(index => ({index, x:config.widgets[index].x, y:config.widgets[index].y}))
     : [{index:i, x:ox, y:oy}];

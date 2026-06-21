@@ -5,6 +5,18 @@ made to TelemetryForge.
 
 ## Unreleased
 
+### Low-CPU rendering
+
+- Removed continuous interpolation frames for hardware sensors; values now
+  redraw once per completed sensor poll.
+- Kept fast smoothing only for Windows volume changes.
+- Limited LibreHardwareMonitor refreshes to once every two seconds while allowing
+  lighter system sensors to update more frequently.
+- Disabled periodic live-preview rendering while the application window is
+  hidden.
+- Rendered glow and shadow effects inside widget-sized layers instead of
+  repeatedly blurring a full 480×320 frame for every widget.
+
 ### MSI Forged Core sample
 
 - Added a portable 480×320 showcase screen with CPU/GPU circles, telemetry

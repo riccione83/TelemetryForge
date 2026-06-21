@@ -27,6 +27,14 @@ pub fn draw_all(image: &mut RgbImage, config: &AppConfig, sensors: &SensorSnapsh
             draw_gif(image, widget)?;
             continue;
         }
+        let padding = widget
+            .glow
+            .saturating_mul(3)
+            .max(widget.shadow.saturating_mul(2))
+            .saturating_add(6) as u32;
+        let mut local_widget = widget.clone();
+        local_widget.x = padding as i32;
+        local_widget.y = padding as i32;
         let value = numeric(widget.kind, sensors);
         let primary = if widget.use_thresholds
             && matches!(
@@ -38,7 +46,10 @@ pub fn draw_all(image: &mut RgbImage, config: &AppConfig, sensors: &SensorSnapsh
             opacity(active_colour(widget, value), widget.opacity)
         };
         let secondary = parse(&widget.secondary_colour, widget.opacity);
-        let mut layer = RgbaImage::new(image.width(), image.height());
+        let mut layer = RgbaImage::new(
+            widget.width.max(1).saturating_add(padding * 2),
+            widget.height.max(1).saturating_add(padding * 2),
+        );
         match widget.render_mode {
             WidgetRenderMode::Text => {
                 let font = super::fonts::load(&widget.font)?;
@@ -50,8 +61,8 @@ pub fn draw_all(image: &mut RgbImage, config: &AppConfig, sensors: &SensorSnapsh
                 draw_text_mut(
                     &mut layer,
                     primary,
-                    widget.x,
-                    widget.y,
+                    local_widget.x,
+                    local_widget.y,
                     widget.font_size,
                     &font,
                     &format!("{}{}{}", widget.left_text, middle, widget.right_text),
@@ -59,27 +70,28 @@ pub fn draw_all(image: &mut RgbImage, config: &AppConfig, sensors: &SensorSnapsh
             }
             WidgetRenderMode::Bar => bar(
                 &mut layer,
-                widget,
+                &local_widget,
                 ratio(widget.kind, value),
                 primary,
                 secondary,
             ),
             WidgetRenderMode::Circle => circle(
                 &mut layer,
-                widget,
+                &local_widget,
                 ratio(widget.kind, value),
                 primary,
                 secondary,
             ),
             WidgetRenderMode::Graph => graph(
-                image,
                 &mut layer,
-                widget,
+                &local_widget,
                 history(widget.kind, sensors),
                 primary,
                 secondary,
             ),
         }
+        let origin_x = widget.x - padding as i32;
+        let origin_y = widget.y - padding as i32;
         if widget.shadow > 0 {
             composite(
                 image,
@@ -87,14 +99,19 @@ pub fn draw_all(image: &mut RgbImage, config: &AppConfig, sensors: &SensorSnapsh
                     &imageops::blur(&layer, widget.shadow as f32 / 2.0),
                     Rgba([0, 0, 0, 160]),
                 ),
-                3,
-                3,
+                origin_x + 3,
+                origin_y + 3,
             );
         }
         if widget.glow > 0 {
-            composite(image, &imageops::blur(&layer, widget.glow as f32), 0, 0);
+            composite(
+                image,
+                &imageops::blur(&layer, widget.glow as f32),
+                origin_x,
+                origin_y,
+            );
         }
-        composite(image, &layer, 0, 0);
+        composite(image, &layer, origin_x, origin_y);
     }
     Ok(())
 }
@@ -283,14 +300,7 @@ fn circle(layer: &mut RgbaImage, w: &WidgetConfig, ratio: f32, a: Rgba<u8>, b: R
     }
 }
 
-fn graph(
-    image: &mut RgbImage,
-    layer: &mut RgbaImage,
-    w: &WidgetConfig,
-    values: &[f32],
-    a: Rgba<u8>,
-    b: Rgba<u8>,
-) {
+fn graph(layer: &mut RgbaImage, w: &WidgetConfig, values: &[f32], a: Rgba<u8>, b: Rgba<u8>) {
     if w.width < 2 || w.height < 2 {
         return;
     }
@@ -299,15 +309,9 @@ fn graph(
             &w.graph_background_colour,
             w.graph_background_opacity.clamp(0.0, 1.0),
         );
-        let alpha = colour[3] as f32 / 255.0;
-        for y in w.y.max(0)..(w.y + w.height as i32).min(image.height() as i32) {
-            for x in w.x.max(0)..(w.x + w.width as i32).min(image.width() as i32) {
-                let pixel = image.get_pixel_mut(x as u32, y as u32);
-                for channel in 0..3 {
-                    pixel[channel] = (pixel[channel] as f32 * (1.0 - alpha)
-                        + colour[channel] as f32 * alpha)
-                        as u8;
-                }
+        for y in w.y.max(0)..(w.y + w.height as i32).min(layer.height() as i32) {
+            for x in w.x.max(0)..(w.x + w.width as i32).min(layer.width() as i32) {
+                layer.put_pixel(x as u32, y as u32, colour);
             }
         }
     }

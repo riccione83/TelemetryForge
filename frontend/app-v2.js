@@ -708,7 +708,7 @@ async function refreshStatus() {
   if (!renderingBusy) updateRenderButton();
   const known={"Stopped":"statusStopped","Rendering active":"statusActive","Frame sent":"statusFrameSent"};
   $("status").textContent=known[s.message]?t(known[s.message]):s.message;
-  if(s.running) refreshPreview();
+  if(s.running && !document.hidden) refreshPreview();
 }
 
 function updateRenderButton() {

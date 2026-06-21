@@ -328,8 +328,9 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
                     target = next;
                     last_sensor_poll = Instant::now();
                 }
-                interpolate_snapshot(&mut displayed, &target, 0.22);
-                *sensors.write() = displayed.clone();
+                if update_displayed_snapshot(&mut displayed, &target) {
+                    *sensors.write() = displayed.clone();
+                }
                 if last_rule_check.elapsed() >= Duration::from_secs(1) {
                     let current_revision = scene_revision.load(Ordering::Relaxed);
                     if current_revision != active_rule_revision {
@@ -438,64 +439,60 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
-fn interpolate_snapshot(
+fn update_displayed_snapshot(
     current: &mut crate::sensors::model::SensorSnapshot,
     target: &crate::sensors::model::SensorSnapshot,
-    amount: f32,
 ) -> bool {
-    fn blend(current: &mut Option<f32>, target: Option<f32>, amount: f32) -> bool {
-        if let Some(target) = target {
-            let next = match *current {
-                Some(value) if (target - value).abs() > 0.05 => value + (target - value) * amount,
-                _ => target,
-            };
-            let changed = current.is_none_or(|value| (next - value).abs() > f32::EPSILON);
-            *current = Some(next);
-            changed
-        } else {
-            false
+    fn assign(current: &mut Option<f32>, target: Option<f32>) -> bool {
+        if *current == target {
+            return false;
         }
+        *current = target;
+        true
     }
-    let mut changed = blend(&mut current.cpu_temperature, target.cpu_temperature, amount);
-    changed |= blend(
+    fn blend_volume(current: &mut Option<f32>, target: Option<f32>) -> bool {
+        let Some(target) = target else {
+            return assign(current, None);
+        };
+        let next = match *current {
+            Some(value) if (target - value).abs() > 0.4 => value + (target - value) * 0.68,
+            _ => target,
+        };
+        if current.is_some_and(|value| (next - value).abs() <= f32::EPSILON) {
+            return false;
+        }
+        *current = Some(next);
+        true
+    }
+    // Hardware and system sensors update only when their poll completes.
+    // Rendering extra interpolation frames for every value is expensive on
+    // small USB displays and does not add useful visual information.
+    let mut changed = assign(&mut current.cpu_temperature, target.cpu_temperature);
+    changed |= assign(
         &mut current.cpu_temperature_core,
         target.cpu_temperature_core,
-        amount,
     );
-    changed |= blend(
+    changed |= assign(
         &mut current.cpu_temperature_socket,
         target.cpu_temperature_socket,
-        amount,
     );
-    changed |= blend(&mut current.cpu_usage, target.cpu_usage, amount);
-    changed |= blend(&mut current.cpu_clock, target.cpu_clock, amount);
-    changed |= blend(
-        &mut current.cpu_clock_average,
-        target.cpu_clock_average,
-        amount,
-    );
-    changed |= blend(
-        &mut current.cpu_clock_effective,
-        target.cpu_clock_effective,
-        amount,
-    );
-    changed |= blend(&mut current.gpu_temperature, target.gpu_temperature, amount);
-    changed |= blend(&mut current.gpu_usage, target.gpu_usage, amount);
-    changed |= blend(&mut current.gpu_clock, target.gpu_clock, amount);
-    changed |= blend(&mut current.gpu_power, target.gpu_power, amount);
-    changed |= blend(&mut current.ram_usage, target.ram_usage, amount);
-    changed |= blend(&mut current.vram_usage, target.vram_usage, amount);
-    changed |= blend(&mut current.vram_used_mb, target.vram_used_mb, amount);
-    changed |= blend(&mut current.vram_total_mb, target.vram_total_mb, amount);
-    changed |= blend(&mut current.disk_usage, target.disk_usage, amount);
-    changed |= blend(&mut current.network_upload, target.network_upload, amount);
-    changed |= blend(
-        &mut current.network_download,
-        target.network_download,
-        amount,
-    );
-    changed |= blend(&mut current.fan_speed, target.fan_speed, amount);
-    changed |= blend(&mut current.system_volume, target.system_volume, 0.68);
+    changed |= assign(&mut current.cpu_usage, target.cpu_usage);
+    changed |= assign(&mut current.cpu_clock, target.cpu_clock);
+    changed |= assign(&mut current.cpu_clock_average, target.cpu_clock_average);
+    changed |= assign(&mut current.cpu_clock_effective, target.cpu_clock_effective);
+    changed |= assign(&mut current.gpu_temperature, target.gpu_temperature);
+    changed |= assign(&mut current.gpu_usage, target.gpu_usage);
+    changed |= assign(&mut current.gpu_clock, target.gpu_clock);
+    changed |= assign(&mut current.gpu_power, target.gpu_power);
+    changed |= assign(&mut current.ram_usage, target.ram_usage);
+    changed |= assign(&mut current.vram_usage, target.vram_usage);
+    changed |= assign(&mut current.vram_used_mb, target.vram_used_mb);
+    changed |= assign(&mut current.vram_total_mb, target.vram_total_mb);
+    changed |= assign(&mut current.disk_usage, target.disk_usage);
+    changed |= assign(&mut current.network_upload, target.network_upload);
+    changed |= assign(&mut current.network_download, target.network_download);
+    changed |= assign(&mut current.fan_speed, target.fan_speed);
+    changed |= blend_volume(&mut current.system_volume, target.system_volume);
     if current.history_cpu != target.history_cpu {
         current.history_cpu.clone_from(&target.history_cpu);
         changed = true;

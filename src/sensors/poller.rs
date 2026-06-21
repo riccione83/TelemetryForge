@@ -17,6 +17,7 @@ pub struct SensorPoller {
     hardware_path: Option<PathBuf>,
     hardware_snapshot: SensorSnapshot,
     last_network_refresh: Instant,
+    last_hardware_refresh: Option<Instant>,
     volume_reader: VolumeReader,
 }
 
@@ -39,6 +40,7 @@ impl SensorPoller {
             hardware_path: None,
             hardware_snapshot: SensorSnapshot::default(),
             last_network_refresh: Instant::now(),
+            last_hardware_refresh: None,
             volume_reader: VolumeReader::new(),
         }
     }
@@ -82,7 +84,13 @@ impl SensorPoller {
             / 1024.0
             / network_interval;
 
-        self.refresh_hardware(lhm_dll);
+        let hardware_due = self
+            .last_hardware_refresh
+            .is_none_or(|last| last.elapsed() >= std::time::Duration::from_secs(2));
+        if hardware_due {
+            self.refresh_hardware(lhm_dll);
+            self.last_hardware_refresh = Some(Instant::now());
+        }
         let hardware = &self.hardware_snapshot;
         SensorSnapshot {
             cpu_temperature: select_cpu_temperature(hardware, cpu_temperature_source),

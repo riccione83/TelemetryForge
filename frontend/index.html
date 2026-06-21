@@ -52,6 +52,8 @@
           <button id="save-screen" data-i18n="saveAs">Save as</button>
           <button id="new-screen" class="secondary" data-i18n="new">New</button>
           <button id="delete-screen" class="danger" data-i18n="delete">Delete</button>
+          <button id="import-package" class="secondary" data-i18n="importPackage">Import package</button>
+          <button id="export-package" class="secondary" data-i18n="exportPackage">Export package</button>
         </div>
       </div>
       <div class="card">
@@ -83,6 +85,12 @@
               <option value="auto" data-i18n="automatic">Automatic</option>
             </select>
           </label>
+          <label><span data-i18n="cpuClockSource">CPU clock source</span>
+            <select id="cpuClockSource">
+              <option value="average" data-i18n="cpuClockAverage">Average clock</option>
+              <option value="effective" data-i18n="cpuClockEffective">Average effective clock</option>
+            </select>
+          </label>
           <label><span data-i18n="fanSensor">Fan sensor</span>
             <select id="fanSensor">
               <option value="" data-i18n="automatic">Automatic</option>
@@ -93,14 +101,41 @@
       </div>
       <div class="card">
         <div class="preview-head">
-          <h2 data-i18n="backgroundTheme">Background and theme</h2>
+          <h2 data-i18n="quickScreens">Quick screens</h2>
           <div class="actions">
-            <button class="secondary preset" data-preset="gaming">Gaming</button>
-            <button class="secondary preset" data-preset="minimal">Minimal</button>
-            <button class="secondary preset" data-preset="idle">Idle</button>
-            <button id="apply-neon-sample" class="secondary" data-i18n="neonSample">Neon sample</button>
+            <label>Gaming<select id="quick-gaming"></select></label>
+            <button class="secondary" data-quick-load="gaming">Gaming</button>
+            <label>Minimal<select id="quick-minimal"></select></label>
+            <button class="secondary" data-quick-load="minimal">Minimal</button>
+            <label>Idle<select id="quick-idle"></select></label>
+            <button class="secondary" data-quick-load="idle">Idle</button>
           </div>
         </div>
+      </div>
+      <div class="card">
+        <div class="preview-head">
+          <h2 data-i18n="automation">Automation</h2>
+          <button id="add-rule" class="secondary" data-i18n="addRule">+ Add rule</button>
+        </div>
+        <div class="grid">
+          <label class="checkline"><input id="automationEnabled" type="checkbox" /><span data-i18n="enableAutomation">Enable automatic screen switching</span></label>
+          <label><span data-i18n="defaultScreen">Default screen</span><select id="defaultScreen"></select></label>
+          <label><span data-i18n="transition">Transition</span>
+            <select id="transitionKind">
+              <option value="none" data-i18n="transitionNone">None</option>
+              <option value="fade" data-i18n="transitionFade">Fade</option>
+              <option value="slide" data-i18n="transitionSlide">Slide</option>
+              <option value="dissolve" data-i18n="transitionDissolve">Dissolve</option>
+              <option value="glitch" data-i18n="transitionGlitch">Glitch</option>
+            </select>
+          </label>
+          <label><span data-i18n="transitionDuration">Duration (ms)</span><input id="transitionDuration" type="number" min="100" max="3000" step="50" /></label>
+        </div>
+        <p class="hint" data-i18n="automationHint">Rules are evaluated from top to bottom. The first matching rule wins.</p>
+        <div id="automation-rules"></div>
+      </div>
+      <div class="card">
+        <h2 data-i18n="backgroundTheme">Background and theme</h2>
         <div class="row">
           <input id="backgroundPath" readonly placeholder="No image selected" data-i18n-placeholder="noImage" />
           <button id="choose-bg" class="secondary" data-i18n="chooseImage">Choose image</button>

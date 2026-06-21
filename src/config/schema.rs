@@ -11,7 +11,59 @@ pub struct AppConfig {
     pub frame_interval_ms: u64,
     pub libre_hardware_monitor_dll: Option<String>,
     pub cpu_temperature_source: CpuTemperatureSource,
+    pub cpu_clock_source: CpuClockSource,
     pub fan_sensor: Option<String>,
+    pub automation: AutomationConfig,
+    pub transition: TransitionConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AutomationConfig {
+    pub enabled: bool,
+    pub default_screen: Option<String>,
+    pub rules: Vec<AutomationRule>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AutomationRule {
+    pub enabled: bool,
+    pub kind: AutomationRuleKind,
+    pub process_name: String,
+    pub threshold: f32,
+    pub idle_seconds: u64,
+    pub sustain_seconds: u64,
+    pub release_seconds: u64,
+    pub screen: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutomationRuleKind {
+    ProcessRunning,
+    GpuTemperatureAbove,
+    CpuTemperatureAbove,
+    GpuUsageAbove,
+    CpuUsageAbove,
+    IdleFor,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TransitionConfig {
+    pub kind: TransitionKind,
+    pub duration_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransitionKind {
+    None,
+    Fade,
+    Slide,
+    Dissolve,
+    Glitch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,6 +72,13 @@ pub enum CpuTemperatureSource {
     Auto,
     Core,
     Socket,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CpuClockSource {
+    Average,
+    Effective,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -98,6 +157,10 @@ pub struct WidgetConfig {
     pub opacity: f32,
     pub graph_background_colour: String,
     pub graph_background_opacity: f32,
+    pub gif_path: Option<String>,
+    pub gif_fps: u16,
+    pub gif_loop: bool,
+    pub gif_fit: BackgroundMode,
     pub glow: u8,
     pub shadow: u8,
     pub use_thresholds: bool,
@@ -132,6 +195,8 @@ pub enum WidgetKind {
     Date,
     Fps,
     Text,
+    Gif,
+    Volume,
 }
 
 #[derive(Debug, Clone, Copy, Hash, Serialize, Deserialize, PartialEq, Eq)]
@@ -159,8 +224,57 @@ impl Default for AppConfig {
             frame_interval_ms: 1000,
             libre_hardware_monitor_dll: None,
             cpu_temperature_source: CpuTemperatureSource::Core,
+            cpu_clock_source: CpuClockSource::Average,
             fan_sensor: None,
+            automation: AutomationConfig::default(),
+            transition: TransitionConfig::default(),
         }
+    }
+}
+
+impl Default for AutomationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            default_screen: None,
+            rules: Vec::new(),
+        }
+    }
+}
+
+impl Default for AutomationRule {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            kind: AutomationRuleKind::ProcessRunning,
+            process_name: String::new(),
+            threshold: 80.0,
+            idle_seconds: 300,
+            sustain_seconds: 3,
+            release_seconds: 8,
+            screen: String::new(),
+        }
+    }
+}
+
+impl Default for AutomationRuleKind {
+    fn default() -> Self {
+        Self::ProcessRunning
+    }
+}
+
+impl Default for TransitionConfig {
+    fn default() -> Self {
+        Self {
+            kind: TransitionKind::Fade,
+            duration_ms: 450,
+        }
+    }
+}
+
+impl Default for TransitionKind {
+    fn default() -> Self {
+        Self::Fade
     }
 }
 
@@ -226,6 +340,10 @@ impl WidgetConfig {
             opacity: 1.0,
             graph_background_colour: "#000000".into(),
             graph_background_opacity: 0.0,
+            gif_path: None,
+            gif_fps: 8,
+            gif_loop: true,
+            gif_fit: BackgroundMode::Contain,
             glow: 0,
             shadow: 0,
             use_thresholds: false,
@@ -239,20 +357,6 @@ impl WidgetConfig {
             refresh_interval_ms: 1000,
             label_format: label.into(),
         }
-    }
-
-    pub fn styled(
-        kind: WidgetKind,
-        x: i32,
-        y: i32,
-        font_size: f32,
-        colour: &str,
-        label: &str,
-    ) -> Self {
-        let mut widget = Self::new(kind, x, y, label);
-        widget.font_size = font_size;
-        widget.colour = colour.into();
-        widget
     }
 }
 
@@ -294,6 +398,12 @@ impl Default for CpuTemperatureSource {
     }
 }
 
+impl Default for CpuClockSource {
+    fn default() -> Self {
+        Self::Average
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,5 +437,23 @@ enabled: true
         let decoded: WidgetConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(decoded.graph_background_colour, "#000000");
         assert_eq!(decoded.graph_background_opacity, 0.0);
+    }
+
+    #[test]
+    fn gif_widget_round_trips_through_yaml() {
+        let mut widget = WidgetConfig::new(WidgetKind::Gif, 30, 40, "");
+        widget.width = 96;
+        widget.height = 96;
+        widget.gif_path = Some(r"C:\animations\mascot.gif".into());
+        widget.gif_fps = 12;
+        widget.gif_loop = false;
+        widget.gif_fit = BackgroundMode::Cover;
+        let yaml = serde_yaml::to_string(&widget).unwrap();
+        let decoded: WidgetConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(decoded.kind, WidgetKind::Gif);
+        assert_eq!(decoded.gif_path, widget.gif_path);
+        assert_eq!(decoded.gif_fps, 12);
+        assert!(!decoded.gif_loop);
+        assert_eq!(decoded.gif_fit, BackgroundMode::Cover);
     }
 }

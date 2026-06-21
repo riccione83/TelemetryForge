@@ -32,10 +32,10 @@ function Visit-Hardware($hardware) {
             $script:cpuControlTemperature = [single]$sensor.Value
         }
         if ($type -eq "Clock" -and $hardwareType -like "Cpu*" -and $name -eq "Cores (Average Effective)") {
-            $values.cpu_clock = [single]$sensor.Value
+            $values.cpu_clock_effective = [single]$sensor.Value
         }
-        elseif ($type -eq "Clock" -and $hardwareType -like "Cpu*" -and $name -eq "Cores (Average)" -and $null -eq $values.cpu_clock) {
-            $values.cpu_clock = [single]$sensor.Value
+        elseif ($type -eq "Clock" -and $hardwareType -like "Cpu*" -and $name -eq "Cores (Average)") {
+            $values.cpu_clock_average = [single]$sensor.Value
         }
         if ($type -eq "Temperature" -and $hardwareType -like "Gpu*" -and $null -eq $values.gpu_temperature) {
             $values.gpu_temperature = [single]$sensor.Value
@@ -49,8 +49,14 @@ function Visit-Hardware($hardware) {
         if ($type -eq "Power" -and $hardwareType -like "Gpu*" -and $name -match "Package|Board|GPU" -and $null -eq $values.gpu_power) {
             $values.gpu_power = [single]$sensor.Value
         }
-        if ($type -eq "Load" -and $hardwareType -like "Gpu*" -and $name -match "Memory" -and $null -eq $values.vram_usage) {
-            $values.vram_usage = [single]$sensor.Value
+        if ($type -eq "Load" -and $hardwareType -like "Gpu*" -and $name -eq "GPU Memory") {
+            $values.vram_usage_fallback = [single]$sensor.Value
+        }
+        if ($type -eq "SmallData" -and $hardwareType -like "Gpu*" -and $name -eq "GPU Memory Used") {
+            $values.vram_used_mb = [single]$sensor.Value
+        }
+        if ($type -eq "SmallData" -and $hardwareType -like "Gpu*" -and $name -eq "GPU Memory Total") {
+            $values.vram_total_mb = [single]$sensor.Value
         }
         if ($type -eq "Fan" -and $null -eq $values.fan_speed) {
             $values.fan_speed = [single]$sensor.Value
@@ -70,12 +76,16 @@ function Read-Snapshot {
         cpu_temperature = $null
         cpu_temperature_core = $null
         cpu_temperature_socket = $null
-        cpu_clock = $null
+        cpu_clock_average = $null
+        cpu_clock_effective = $null
         gpu_temperature = $null
         gpu_usage = $null
         gpu_clock = $null
         gpu_power = $null
         vram_usage = $null
+        vram_usage_fallback = $null
+        vram_used_mb = $null
+        vram_total_mb = $null
         fan_speed = $null
         fan_sensors = @()
     }
@@ -90,6 +100,13 @@ function Read-Snapshot {
         $values.cpu_temperature_core = $cpuControlTemperature
     }
     $values.cpu_temperature = $cpuControlTemperature
+    if ($null -ne $values.vram_used_mb -and $null -ne $values.vram_total_mb -and $values.vram_total_mb -gt 0) {
+        $values.vram_usage = [single](100.0 * $values.vram_used_mb / $values.vram_total_mb)
+    }
+    elseif ($null -ne $values.vram_usage_fallback) {
+        $values.vram_usage = $values.vram_usage_fallback
+    }
+    $values.Remove("vram_usage_fallback")
     $values.fan_sensors = @($fanSensors)
     return ($values | ConvertTo-Json -Compress)
 }

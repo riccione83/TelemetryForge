@@ -12,7 +12,11 @@ use image::RgbImage;
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
+    sync::LazyLock,
+    time::Instant,
 };
+
+static ANIMATION_START: LazyLock<Instant> = LazyLock::new(Instant::now);
 
 pub fn render(config: &AppConfig, sensors: &SensorSnapshot) -> Result<RgbImage> {
     let mut frame = background::create(config)?;
@@ -25,6 +29,12 @@ pub fn visual_signature(config: &AppConfig, sensors: &SensorSnapshot) -> u64 {
     for widget in config.widgets.iter().filter(|widget| widget.enabled) {
         widget.kind.hash(&mut hasher);
         widget.render_mode.hash(&mut hasher);
+        if widget.kind == WidgetKind::Gif {
+            let frame_duration = (1000 / widget.gif_fps.clamp(1, 30) as u128).max(1);
+            let elapsed = ANIMATION_START.elapsed().as_millis();
+            (elapsed / frame_duration).hash(&mut hasher);
+            continue;
+        }
         match widget.render_mode {
             WidgetRenderMode::Text => {
                 numeric(widget.kind, sensors)
@@ -71,7 +81,12 @@ fn numeric(kind: WidgetKind, sensors: &SensorSnapshot) -> Option<f32> {
         WidgetKind::NetworkUpload => sensors.network_upload,
         WidgetKind::NetworkDownload => sensors.network_download,
         WidgetKind::FanSpeed => sensors.fan_speed,
-        WidgetKind::Clock | WidgetKind::Date | WidgetKind::Fps | WidgetKind::Text => None,
+        WidgetKind::Volume => sensors.system_volume,
+        WidgetKind::Clock
+        | WidgetKind::Date
+        | WidgetKind::Fps
+        | WidgetKind::Text
+        | WidgetKind::Gif => None,
     }
 }
 
@@ -81,6 +96,7 @@ fn maximum(kind: WidgetKind) -> f32 {
         WidgetKind::GpuPower => 600.0,
         WidgetKind::GpuClock | WidgetKind::FanSpeed => 3000.0,
         WidgetKind::NetworkUpload | WidgetKind::NetworkDownload => 10000.0,
+        WidgetKind::Volume => 100.0,
         _ => 100.0,
     }
 }
@@ -96,6 +112,7 @@ fn history(kind: WidgetKind, sensors: &SensorSnapshot) -> &[f32] {
         WidgetKind::GpuPower => &sensors.history_gpu_power,
         WidgetKind::NetworkUpload => &sensors.history_network_upload,
         WidgetKind::NetworkDownload => &sensors.history_network_download,
+        WidgetKind::Volume => &sensors.history_volume,
         _ => &[],
     }
 }

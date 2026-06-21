@@ -1,5 +1,8 @@
-use super::{libre_hardware_monitor::Reader as HardwareReader, model::SensorSnapshot};
-use crate::config::schema::CpuTemperatureSource;
+use super::{
+    libre_hardware_monitor::Reader as HardwareReader, model::SensorSnapshot,
+    windows_volume::Reader as VolumeReader,
+};
+use crate::config::schema::{CpuClockSource, CpuTemperatureSource};
 use std::{
     path::{Path, PathBuf},
     time::Instant,
@@ -14,6 +17,7 @@ pub struct SensorPoller {
     hardware_path: Option<PathBuf>,
     hardware_snapshot: SensorSnapshot,
     last_network_refresh: Instant,
+    volume_reader: VolumeReader,
 }
 
 impl SensorPoller {
@@ -35,6 +39,7 @@ impl SensorPoller {
             hardware_path: None,
             hardware_snapshot: SensorSnapshot::default(),
             last_network_refresh: Instant::now(),
+            volume_reader: VolumeReader::new(),
         }
     }
 
@@ -42,6 +47,7 @@ impl SensorPoller {
         &mut self,
         lhm_dll: Option<&str>,
         cpu_temperature_source: CpuTemperatureSource,
+        cpu_clock_source: CpuClockSource,
         fan_sensor: Option<&str>,
     ) -> SensorSnapshot {
         self.system.refresh_cpu_usage();
@@ -83,7 +89,9 @@ impl SensorPoller {
             cpu_temperature_core: hardware.cpu_temperature_core,
             cpu_temperature_socket: hardware.cpu_temperature_socket,
             cpu_usage: Some(self.system.global_cpu_usage()),
-            cpu_clock: hardware.cpu_clock,
+            cpu_clock: select_cpu_clock(hardware, cpu_clock_source),
+            cpu_clock_average: hardware.cpu_clock_average,
+            cpu_clock_effective: hardware.cpu_clock_effective,
             gpu_temperature: hardware.gpu_temperature,
             gpu_usage: hardware.gpu_usage,
             gpu_clock: hardware.gpu_clock,
@@ -94,6 +102,8 @@ impl SensorPoller {
                 None
             },
             vram_usage: hardware.vram_usage,
+            vram_used_mb: hardware.vram_used_mb,
+            vram_total_mb: hardware.vram_total_mb,
             disk_usage,
             network_upload: Some(network_upload),
             network_download: Some(network_download),
@@ -106,9 +116,14 @@ impl SensorPoller {
                         .map(|sensor| sensor.value)
                 })
                 .or(hardware.fan_speed),
+            system_volume: self.volume_reader.read(),
             fan_sensors: hardware.fan_sensors.clone(),
             ..Default::default()
         }
+    }
+
+    pub fn read_system_volume(&mut self) -> Option<f32> {
+        self.volume_reader.read()
     }
 
     fn refresh_hardware(&mut self, configured_path: Option<&str>) {
@@ -161,11 +176,17 @@ impl Default for SensorPoller {
 pub fn read_snapshot(
     lhm_dll: Option<&str>,
     cpu_temperature_source: CpuTemperatureSource,
+    cpu_clock_source: CpuClockSource,
     fan_sensor: Option<&str>,
 ) -> SensorSnapshot {
     let mut poller = SensorPoller::new();
     std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-    poller.read(lhm_dll, cpu_temperature_source, fan_sensor)
+    poller.read(
+        lhm_dll,
+        cpu_temperature_source,
+        cpu_clock_source,
+        fan_sensor,
+    )
 }
 
 fn resolve_lhm_path(configured_path: Option<&str>) -> Option<PathBuf> {
@@ -194,5 +215,12 @@ fn select_cpu_temperature(snapshot: &SensorSnapshot, source: CpuTemperatureSourc
             .cpu_temperature_core
             .or(snapshot.cpu_temperature_socket)
             .or(snapshot.cpu_temperature),
+    }
+}
+
+fn select_cpu_clock(snapshot: &SensorSnapshot, source: CpuClockSource) -> Option<f32> {
+    match source {
+        CpuClockSource::Average => snapshot.cpu_clock_average.or(snapshot.cpu_clock_effective),
+        CpuClockSource::Effective => snapshot.cpu_clock_effective.or(snapshot.cpu_clock_average),
     }
 }

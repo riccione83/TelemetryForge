@@ -1,17 +1,32 @@
 use crate::{
-    config::schema::{AppConfig, WidgetConfig, WidgetKind, WidgetRenderMode},
+    config::schema::{AppConfig, BackgroundMode, WidgetConfig, WidgetKind, WidgetRenderMode},
     sensors::model::SensorSnapshot,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::Local;
-use image::{imageops, RgbImage, Rgba, RgbaImage};
+use image::{codecs::gif::GifDecoder, imageops, AnimationDecoder, RgbImage, Rgba, RgbaImage};
 use imageproc::{
     drawing::{draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut},
     rect::Rect,
 };
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::BufReader,
+    sync::{LazyLock, Mutex},
+    time::{Instant, UNIX_EPOCH},
+};
+
+static GIF_CACHE: LazyLock<Mutex<HashMap<String, Vec<RgbaImage>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static ANIMATION_START: LazyLock<Instant> = LazyLock::new(Instant::now);
 
 pub fn draw_all(image: &mut RgbImage, config: &AppConfig, sensors: &SensorSnapshot) -> Result<()> {
     for widget in config.widgets.iter().filter(|w| w.enabled) {
+        if widget.kind == WidgetKind::Gif {
+            draw_gif(image, widget)?;
+            continue;
+        }
         let value = numeric(widget.kind, sensors);
         let primary = if widget.use_thresholds
             && matches!(
@@ -82,6 +97,132 @@ pub fn draw_all(image: &mut RgbImage, config: &AppConfig, sensors: &SensorSnapsh
         composite(image, &layer, 0, 0);
     }
     Ok(())
+}
+
+fn draw_gif(image: &mut RgbImage, widget: &WidgetConfig) -> Result<()> {
+    let Some(path) = widget.gif_path.as_deref().filter(|path| !path.is_empty()) else {
+        return Ok(());
+    };
+    let modified = std::fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+    let key = format!("{path}:{modified}");
+    let frames = {
+        let mut cache = GIF_CACHE.lock().expect("GIF cache poisoned");
+        if !cache.contains_key(&key) {
+            let decoder = GifDecoder::new(BufReader::new(
+                File::open(path).with_context(|| format!("Could not open GIF {path}"))?,
+            ))
+            .with_context(|| format!("Could not decode GIF {path}"))?;
+            let decoded = decoder
+                .into_frames()
+                .collect_frames()
+                .with_context(|| format!("Could not read GIF frames from {path}"))?
+                .into_iter()
+                .map(|frame| frame.into_buffer())
+                .collect::<Vec<_>>();
+            cache.retain(|cached_key, _| !cached_key.starts_with(&format!("{path}:")));
+            cache.insert(key.clone(), decoded);
+        }
+        cache.get(&key).cloned().unwrap_or_default()
+    };
+    if frames.is_empty() || widget.width == 0 || widget.height == 0 {
+        return Ok(());
+    }
+    let elapsed_ms = ANIMATION_START.elapsed().as_millis();
+    let frame_duration = (1000 / widget.gif_fps.clamp(1, 30) as u128).max(1);
+    let raw_index = (elapsed_ms / frame_duration) as usize;
+    let index = if widget.gif_loop {
+        raw_index % frames.len()
+    } else {
+        raw_index.min(frames.len() - 1)
+    };
+    let fitted = fit_gif_frame(&frames[index], widget.width, widget.height, widget.gif_fit);
+    composite_rgba(
+        image,
+        &fitted,
+        widget.x,
+        widget.y,
+        widget.opacity.clamp(0.0, 1.0),
+    );
+    Ok(())
+}
+
+fn fit_gif_frame(source: &RgbaImage, width: u32, height: u32, mode: BackgroundMode) -> RgbaImage {
+    match mode {
+        BackgroundMode::Stretch => {
+            imageops::resize(source, width, height, imageops::FilterType::Lanczos3)
+        }
+        BackgroundMode::Contain => {
+            let scale =
+                (width as f32 / source.width() as f32).min(height as f32 / source.height() as f32);
+            let target_width = (source.width() as f32 * scale).round().max(1.0) as u32;
+            let target_height = (source.height() as f32 * scale).round().max(1.0) as u32;
+            let resized = imageops::resize(
+                source,
+                target_width,
+                target_height,
+                imageops::FilterType::Lanczos3,
+            );
+            let mut canvas = RgbaImage::new(width, height);
+            imageops::overlay(
+                &mut canvas,
+                &resized,
+                ((width - target_width) / 2) as i64,
+                ((height - target_height) / 2) as i64,
+            );
+            canvas
+        }
+        BackgroundMode::Cover => {
+            let scale =
+                (width as f32 / source.width() as f32).max(height as f32 / source.height() as f32);
+            let target_width = (source.width() as f32 * scale).round().max(1.0) as u32;
+            let target_height = (source.height() as f32 * scale).round().max(1.0) as u32;
+            let resized = imageops::resize(
+                source,
+                target_width,
+                target_height,
+                imageops::FilterType::Lanczos3,
+            );
+            imageops::crop_imm(
+                &resized,
+                (target_width - width) / 2,
+                (target_height - height) / 2,
+                width,
+                height,
+            )
+            .to_image()
+        }
+        BackgroundMode::Centre => {
+            let mut canvas = RgbaImage::new(width, height);
+            let x = width.saturating_sub(source.width()) / 2;
+            let y = height.saturating_sub(source.height()) / 2;
+            imageops::overlay(&mut canvas, source, x as i64, y as i64);
+            canvas
+        }
+    }
+}
+
+fn composite_rgba(dst: &mut RgbImage, src: &RgbaImage, ox: i32, oy: i32, opacity: f32) {
+    for (x, y, pixel) in src.enumerate_pixels() {
+        let tx = ox + x as i32;
+        let ty = oy + y as i32;
+        if tx < 0 || ty < 0 || tx >= dst.width() as i32 || ty >= dst.height() as i32 {
+            continue;
+        }
+        let alpha = pixel[3] as f32 / 255.0 * opacity;
+        if alpha <= 0.0 {
+            continue;
+        }
+        let target = dst.get_pixel_mut(tx as u32, ty as u32);
+        for channel in 0..3 {
+            target[channel] =
+                (target[channel] as f32 * (1.0 - alpha) + pixel[channel] as f32 * alpha) as u8;
+        }
+    }
 }
 
 fn bar(layer: &mut RgbaImage, w: &WidgetConfig, ratio: f32, a: Rgba<u8>, b: Rgba<u8>) {
@@ -314,6 +455,8 @@ fn numeric(k: WidgetKind, s: &SensorSnapshot) -> Option<f32> {
         WidgetKind::NetworkUpload => s.network_upload,
         WidgetKind::NetworkDownload => s.network_download,
         WidgetKind::FanSpeed => s.fan_speed,
+        WidgetKind::Volume => s.system_volume,
+        WidgetKind::Gif => None,
         _ => None,
     }
 }
@@ -321,12 +464,32 @@ fn shown(k: WidgetKind, s: &SensorSnapshot) -> String {
     match k {
         WidgetKind::Clock => Local::now().format("%H:%M").to_string(),
         WidgetKind::Date => Local::now().format("%d/%m/%Y").to_string(),
+        WidgetKind::CpuClock => frequency(s.cpu_clock),
+        WidgetKind::GpuClock => frequency(s.gpu_clock),
         WidgetKind::Text => String::new(),
+        WidgetKind::Gif => String::new(),
         WidgetKind::Fps => "--".into(),
         _ => numeric(k, s)
             .map(|v| format!("{v:.0}"))
             .unwrap_or_else(|| "--".into()),
     }
+}
+
+fn frequency(value: Option<f32>) -> String {
+    value
+        .map(|mhz| {
+            if mhz >= 1000.0 {
+                let ghz = mhz / 1000.0;
+                if ghz >= 10.0 {
+                    format!("{ghz:.1} GHz")
+                } else {
+                    format!("{ghz:.2} GHz")
+                }
+            } else {
+                format!("{mhz:.0} MHz")
+            }
+        })
+        .unwrap_or_else(|| "--".into())
 }
 fn max_for(k: WidgetKind) -> f32 {
     match k {
@@ -334,6 +497,7 @@ fn max_for(k: WidgetKind) -> f32 {
         WidgetKind::GpuPower => 600.0,
         WidgetKind::GpuClock | WidgetKind::FanSpeed => 3000.0,
         WidgetKind::NetworkUpload | WidgetKind::NetworkDownload => 10000.0,
+        WidgetKind::Volume => 100.0,
         _ => 100.0,
     }
 }
@@ -347,6 +511,7 @@ fn history(k: WidgetKind, s: &SensorSnapshot) -> &[f32] {
         WidgetKind::GpuPower => &s.history_gpu_power,
         WidgetKind::NetworkUpload => &s.history_network_upload,
         WidgetKind::NetworkDownload => &s.history_network_download,
+        WidgetKind::Volume => &s.history_volume,
         _ => &[],
     }
 }
@@ -460,5 +625,20 @@ mod tests {
             graph_colour(&widget, base, secondary, 89.0, 91.0, 0.5),
             parse(&widget.critical_colour, 1.0)
         );
+    }
+
+    #[test]
+    fn contained_gif_frame_preserves_transparent_padding() {
+        let source = RgbaImage::from_pixel(8, 4, Rgba([255, 0, 0, 255]));
+        let fitted = fit_gif_frame(&source, 8, 8, BackgroundMode::Contain);
+        assert_eq!(fitted.get_pixel(0, 0)[3], 0);
+        assert_eq!(fitted.get_pixel(4, 4), &Rgba([255, 0, 0, 255]));
+    }
+
+    #[test]
+    fn frequency_switches_automatically_between_mhz_and_ghz() {
+        assert_eq!(frequency(Some(518.0)), "518 MHz");
+        assert_eq!(frequency(Some(4850.0)), "4.85 GHz");
+        assert_eq!(frequency(None), "--");
     }
 }

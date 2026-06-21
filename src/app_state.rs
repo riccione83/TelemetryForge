@@ -3,7 +3,7 @@ use crate::{
     sensors::model::SensorSnapshot,
 };
 use parking_lot::{Mutex, RwLock};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::{path::PathBuf, sync::Arc};
 
 pub struct RenderWorker {
@@ -16,6 +16,7 @@ pub struct AppState {
     pub sensors: Arc<RwLock<SensorSnapshot>>,
     pub worker: Mutex<Option<RenderWorker>>,
     pub status: Arc<RwLock<String>>,
+    pub scene_revision: Arc<AtomicU64>,
 }
 
 impl AppState {
@@ -34,6 +35,7 @@ impl AppState {
             sensors: Arc::new(RwLock::new(SensorSnapshot::default())),
             worker: Mutex::new(None),
             status: Arc::new(RwLock::new("Stopped".into())),
+            scene_revision: Arc::new(AtomicU64::new(0)),
         }
     }
 }

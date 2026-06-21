@@ -13,12 +13,16 @@ let renderingActive = false;
 let renderingBusy = false;
 let previewInteractionActive = false;
 let previewRefreshPending = false;
+let autostartEnabled = false;
+let gifPreviewBusy = false;
+let availableScreens = [];
 
 const nameKeys = {
   cpu_temperature:"widgetCpuTemp",cpu_usage:"widgetCpuUsage",cpu_clock:"widgetCpuClock",gpu_temperature:"widgetGpuTemp",
   gpu_usage:"widgetGpuUsage",gpu_clock:"widgetGpuClock",gpu_power:"widgetGpuPower",ram_usage:"widgetRam",vram_usage:"widgetVram",
   disk_usage:"widgetDisk",network_upload:"widgetUpload",network_download:"widgetDownload",
-  fan_speed:"widgetFan",clock:"widgetClock",date:"widgetDate",fps:"widgetFps",text:"widgetText"
+  fan_speed:"widgetFan",clock:"widgetClock",date:"widgetDate",fps:"widgetFps",text:"widgetText",gif:"widgetGif",
+  volume:"widgetVolume"
 };
 const widgetName = kind => t(nameKeys[kind] || kind);
 const defaults = {
@@ -27,7 +31,14 @@ const defaults = {
   gpu_clock: "{value}", gpu_power: "{value}", ram_usage: "{value}", vram_usage: "{value}",
   disk_usage: "{value}", network_upload: "{value}", network_download: "{value}",
   fan_speed: "{value}", clock: "{value}", date: "{value}", fps: "{value}",
-  text: "Testo libero"
+  text: "Testo libero", gif: "", volume: "{value}"
+};
+const defaultAffixes = {
+  cpu_temperature: {left:"CPU ", right:" °C"},
+  gpu_temperature: {left:"GPU ", right:" °C"},
+  cpu_clock: {left:"CPU ", right:""},
+  gpu_clock: {left:"GPU ", right:""},
+  volume: {left:"VOL ", right:"%"}
 };
 const fonts = ["Segoe UI","Segoe UI Bold","Arial","Arial Bold","Bahnschrift","Calibri","Calibri Bold","Consolas","Consolas Bold","Courier New","Impact","Tahoma","Trebuchet MS","Verdana"];
 const modeKeys = {text:"modeText",bar:"modeBar",circle:"modeCircle",graph:"modeGraph"};
@@ -54,19 +65,25 @@ async function boot() {
   collapseAllWidgets();
   refreshTranslatedUi();
   bindConfig();
-  $("autostart").checked = await invoke("get_autostart").catch(() => false);
+  autostartEnabled = await invoke("get_autostart").catch(() => false);
+  $("autostart").checked = autostartEnabled;
   await Promise.all([loadPorts(), loadScreens()]);
   await loadFanSensors();
   await refreshPreview();
   await refreshStatus();
   setInterval(refreshStatus, 1200);
+  setInterval(refreshGifPreview, 200);
 }
 
 function bindConfig() {
+  config.automation ||= {enabled:false,default_screen:null,rules:[]};
+  config.automation.rules ||= [];
+  config.transition ||= {kind:"fade",duration_ms:450};
   const values = {
     orientation: config.display.orientation, width: config.display.width, height: config.display.height,
     brightness: config.display.brightness, frameInterval: config.frame_interval_ms,
     cpuTemperatureSource: config.cpu_temperature_source || "core",
+    cpuClockSource: config.cpu_clock_source || "average",
     fanSensor: config.fan_sensor || "",
     backgroundPath: config.background.path || "", backgroundMode: config.background.mode,
     backgroundSource: config.background.source || "file",
@@ -79,7 +96,12 @@ function bindConfig() {
   syncColourPickers();
   $("screen").style.aspectRatio = `${config.display.width} / ${config.display.height}`;
   $("screen").style.setProperty("--display-ratio", config.display.width / config.display.height);
+  $("automationEnabled").checked = !!config.automation.enabled;
+  $("transitionKind").value = config.transition.kind || "fade";
+  $("transitionDuration").value = config.transition.duration_ms || 450;
   renderWidgets();
+  populateAutomationScreens();
+  renderRules();
   requestAnimationFrame(renderOverlay);
 }
 
@@ -92,10 +114,86 @@ async function loadPorts() {
 
 async function loadScreens(selected = currentScreen) {
   const screens = await invoke("list_screens");
+  availableScreens = screens;
   $("screen-list").innerHTML = `<option value="">${t("selectScreen")}</option>` +
     screens.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
   if (screens.includes(selected)) $("screen-list").value = selected;
   $("screen-state").textContent = currentScreen || t("screenCurrent");
+  for (const slot of ["gaming","minimal","idle"]) {
+    const select = $(`quick-${slot}`);
+    const assigned = localStorage.getItem(`telemetryforge-quick-${slot}`) || "";
+    select.className = "quick-screen-select";
+    select.innerHTML = `<option value="">—</option>` +
+      screens.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
+    select.value = screens.includes(assigned) ? assigned : "";
+    select.onchange = () => localStorage.setItem(`telemetryforge-quick-${slot}`, select.value);
+  }
+  populateAutomationScreens();
+  renderRules();
+}
+
+function screenOptions(selected = "", includeEmpty = true) {
+  return `${includeEmpty ? `<option value="">—</option>` : ""}` +
+    availableScreens.map(name =>
+      `<option value="${esc(name)}" ${name === selected ? "selected" : ""}>${esc(name)}</option>`
+    ).join("");
+}
+
+function populateAutomationScreens() {
+  if (!$("defaultScreen") || !config?.automation) return;
+  $("defaultScreen").innerHTML = screenOptions(config.automation.default_screen || "");
+  $("defaultScreen").value = config.automation.default_screen || "";
+}
+
+function renderRules() {
+  const root = $("automation-rules");
+  if (!root || !config?.automation) return;
+  root.innerHTML = config.automation.rules.map((rule, index) => {
+    const condition = rule.kind === "process_running"
+      ? `<label class="wide">${t("processName")}<input data-rule="${index}" data-rule-key="process_name" value="${esc(rule.process_name || "")}" placeholder="game.exe"></label>`
+      : rule.kind === "idle_for"
+        ? `<label>${t("idleSeconds")}<input data-rule="${index}" data-rule-key="idle_seconds" type="number" min="1" value="${rule.idle_seconds ?? 300}"></label>`
+        : `<label>${rule.kind.includes("usage") ? t("usageThreshold") : t("temperatureThreshold")}<input data-rule="${index}" data-rule-key="threshold" type="number" min="0" max="100" value="${rule.threshold ?? 80}"></label>`;
+    return `<div class="automation-rule">
+      <label class="toggle"><input data-rule="${index}" data-rule-key="enabled" type="checkbox" ${rule.enabled !== false ? "checked" : ""}><strong>${t("rule")} ${index + 1}</strong></label>
+      <label>${t("condition")}<select data-rule="${index}" data-rule-key="kind">
+        ${["process_running","gpu_usage_above","cpu_usage_above","gpu_temperature_above","cpu_temperature_above","idle_for"].map(kind =>
+          `<option value="${kind}" ${rule.kind === kind ? "selected" : ""}>${t(`rule_${kind}`)}</option>`
+        ).join("")}
+      </select></label>
+      ${condition}
+      <label>${t("sustainSeconds")}<input data-rule="${index}" data-rule-key="sustain_seconds" type="number" min="0" value="${rule.sustain_seconds ?? 3}"></label>
+      <label>${t("releaseSeconds")}<input data-rule="${index}" data-rule-key="release_seconds" type="number" min="0" value="${rule.release_seconds ?? 8}"></label>
+      <label>${t("targetScreen")}<select data-rule="${index}" data-rule-key="screen">${screenOptions(rule.screen || "")}</select></label>
+      <div class="actions">
+        <button class="secondary compact" data-move-rule="${index}" data-direction="-1" title="${t("moveUp")}">↑</button>
+        <button class="secondary compact" data-move-rule="${index}" data-direction="1" title="${t("moveDown")}">↓</button>
+        <button class="danger compact" data-delete-rule="${index}">${t("remove")}</button>
+      </div>
+    </div>`;
+  }).join("") || `<p class="muted">${t("noRules")}</p>`;
+  root.querySelectorAll("[data-rule]").forEach(input => {
+    const update = () => {
+      const rule = config.automation.rules[+input.dataset.rule];
+      rule[input.dataset.ruleKey] = input.type === "checkbox" ? input.checked :
+        input.type === "number" ? +input.value : input.value;
+      if (input.dataset.ruleKey === "kind") renderRules();
+    };
+    input.oninput = update;
+    input.onchange = update;
+  });
+  root.querySelectorAll("[data-delete-rule]").forEach(button => button.onclick = () => {
+    config.automation.rules.splice(+button.dataset.deleteRule, 1);
+    renderRules();
+  });
+  root.querySelectorAll("[data-move-rule]").forEach(button => button.onclick = () => {
+    const from = +button.dataset.moveRule;
+    const to = from + +button.dataset.direction;
+    if (to < 0 || to >= config.automation.rules.length) return;
+    [config.automation.rules[from], config.automation.rules[to]] =
+      [config.automation.rules[to], config.automation.rules[from]];
+    renderRules();
+  });
 }
 
 async function loadFanSensors(snapshot) {
@@ -134,6 +232,12 @@ function renderWidgets() {
         <label>${t("font")}<select data-i="${i}" data-k="font">${fonts.map(font => `<option value="${font}" ${(w.font || "Segoe UI") === font ? "selected" : ""}>${font}</option>`).join("")}</select></label>
         <label>${t("fontSize")}<input data-i="${i}" data-k="font_size" type="number" min="6" value="${w.font_size}"></label>
         <label>${t("interval")}<input data-i="${i}" data-k="refresh_interval_ms" type="number" min="100" value="${w.refresh_interval_ms}"></label>
+        ${w.kind === "gif" ? `
+          <label class="wide">${t("gifFile")}<div class="port-row"><input data-i="${i}" data-k="gif_path" value="${esc(w.gif_path || "")}" readonly><button type="button" class="secondary compact" data-select-gif="${i}">${t("chooseGif")}</button></div></label>
+          <label>${t("gifFps")}<input data-i="${i}" data-k="gif_fps" type="number" min="1" max="30" value="${w.gif_fps ?? 8}"></label>
+          <label class="toggle">${t("gifLoop")}<input data-i="${i}" data-k="gif_loop" type="checkbox" ${w.gif_loop !== false ? "checked" : ""}></label>
+          <label>${t("gifFit")}<select data-i="${i}" data-k="gif_fit">${["contain","cover","stretch","centre"].map(mode => `<option value="${mode}" ${(w.gif_fit || "contain") === mode ? "selected" : ""}>${mode}</option>`).join("")}</select></label>
+        ` : ""}
         ${colourField(t("colour"), i, "colour", w.colour)}
         ${colourField(t("gradient"), i, "secondary_colour", w.secondary_colour || w.colour)}
         <label>${t("opacity")}<input data-i="${i}" data-k="opacity" type="range" min="0.1" max="1" step="0.05" value="${w.opacity ?? 1}"></label>
@@ -179,6 +283,14 @@ function renderWidgets() {
   document.querySelectorAll("[data-add-bar]").forEach(button => button.onclick = () => addVisualWidget(+button.dataset.addBar, "bar"));
   document.querySelectorAll("[data-add-circle]").forEach(button => button.onclick = () => addVisualWidget(+button.dataset.addCircle, "circle"));
   document.querySelectorAll("[data-add-graph]").forEach(button => button.onclick = () => addVisualWidget(+button.dataset.addGraph, "graph"));
+  document.querySelectorAll("[data-select-gif]").forEach(button => button.onclick = async () => {
+    const path = await invoke("select_gif");
+    if (!path) return;
+    const index = +button.dataset.selectGif;
+    config.widgets[index].gif_path = path;
+    renderWidgets();
+    scheduleLivePreview();
+  });
   document.querySelectorAll("[data-i]").forEach(input => {
     const update = () => {
       readWidgetInput(input);
@@ -261,6 +373,10 @@ function addVisualWidget(sourceIndex, renderMode) {
     label_format: "{value}",
     graph_background_colour: "#000000",
     graph_background_opacity: renderMode === "graph" ? 0.4 : 0,
+    gif_path: null,
+    gif_fps: 8,
+    gif_loop: true,
+    gif_fit: "contain",
     x: Math.min(config.display.width - 20, source.x + 20),
     y: Math.min(config.display.height - 20, source.y + 20),
     width: renderMode === "circle" ? 80 : 150,
@@ -300,6 +416,21 @@ function scheduleLivePreview() {
       $("error").textContent = `${t("previewError")}: ${error}`;
     }
   }, 160);
+}
+
+async function refreshGifPreview() {
+  if (gifPreviewBusy || previewInteractionActive || document.hidden || !config) return;
+  const animated = config.widgets.some(widget =>
+    widget.enabled && widget.kind === "gif" && widget.gif_path);
+  if (!animated) return;
+  gifPreviewBusy = true;
+  try {
+    $("preview").src = await invoke("preview_config", {config});
+  } catch (error) {
+    $("error").textContent = `${t("previewError")}: ${error}`;
+  } finally {
+    gifPreviewBusy = false;
+  }
 }
 
 function renderOverlay() {
@@ -507,7 +638,12 @@ function readForm() {
   });
   config.frame_interval_ms = +$("frameInterval").value;
   config.cpu_temperature_source = $("cpuTemperatureSource").value;
+  config.cpu_clock_source = $("cpuClockSource").value;
   config.fan_sensor = $("fanSensor").value || null;
+  config.automation.enabled = $("automationEnabled").checked;
+  config.automation.default_screen = $("defaultScreen").value || null;
+  config.transition.kind = $("transitionKind").value;
+  config.transition.duration_ms = Math.max(100, Math.min(3000, +$("transitionDuration").value || 450));
   config.background.mode = $("backgroundMode").value;
   config.background.source = $("backgroundSource").value;
   config.background.folder = $("backgroundFolder").value || null;
@@ -519,7 +655,10 @@ function readForm() {
 
 async function save() {
   readForm(); await invoke("save_config", {config});
-  try { await invoke("set_autostart", {enabled:$("autostart").checked}); } catch {}
+  if ($("autostart").checked !== autostartEnabled) {
+    await invoke("set_autostart", {enabled:$("autostart").checked});
+    autostartEnabled = $("autostart").checked;
+  }
   bindConfig(); await refreshPreview(); $("status").textContent = t("configurationSaved");
 }
 async function refreshPreview() {
@@ -596,7 +735,6 @@ $("slideshowInterval").oninput=()=>{readForm();scheduleLivePreview();};
     scheduleLivePreview();
   };
 });
-$("apply-neon-sample").onclick=async()=>{config=await invoke("load_neon_sample");currentScreen="";collapseAllWidgets();bindConfig();await refreshPreview();};
 $("refresh-ports").onclick=loadPorts;
 $("brightness").oninput=()=>{
   config.display.brightness=+$("brightness").value;
@@ -611,17 +749,34 @@ $("brightness").oninput=()=>{
   },180);
 };
 $("save").onclick=save;
+$("add-rule").onclick=()=>{
+  config.automation.rules.push({enabled:true,kind:"process_running",process_name:"",threshold:80,idle_seconds:300,sustain_seconds:3,release_seconds:8,screen:""});
+  renderRules();
+};
 $("fullscreen-preview").onclick=()=>setPreviewFullscreen(!previewFullscreen);
 $("collapse-widgets").onclick=()=>{collapseAllWidgets();renderWidgets();};
 $("expand-widgets").onclick=()=>{expandAllWidgets();renderWidgets();};
-$("add-widget").onclick=()=>{const kind=$("new-widget-kind").value;config.widgets.push({kind,render_mode:"text",enabled:true,left_text:"",right_text:"",x:20,y:20,width:180,height:42,font:"Segoe UI",font_size:24,colour:config.theme.foreground,secondary_colour:config.theme.accent,opacity:1,graph_background_colour:"#000000",graph_background_opacity:0,glow:0,shadow:0,use_thresholds:false,warning_threshold:70,critical_threshold:90,warning_colour:"#ffd166",critical_colour:"#ff4d6d",circle_thickness:16,circle_start_angle:-90,circle_sweep_angle:360,refresh_interval_ms:1000,label_format:defaults[kind]});selectedWidget=config.widgets.length-1;selectedWidgets=new Set([selectedWidget]);collapsedWidgets.delete(selectedWidget);renderWidgets();renderOverlay();scheduleLivePreview();};
+$("add-widget").onclick=()=>{const kind=$("new-widget-kind").value;const affix=defaultAffixes[kind]||{left:"",right:""};config.widgets.push({kind,render_mode:"text",enabled:true,left_text:affix.left,right_text:affix.right,x:20,y:20,width:kind==="gif"?96:180,height:kind==="gif"?96:42,font:"Segoe UI",font_size:24,colour:config.theme.foreground,secondary_colour:config.theme.accent,opacity:1,graph_background_colour:"#000000",graph_background_opacity:0,gif_path:null,gif_fps:8,gif_loop:true,gif_fit:"contain",glow:0,shadow:0,use_thresholds:false,warning_threshold:70,critical_threshold:90,warning_colour:"#ffd166",critical_colour:"#ff4d6d",circle_thickness:16,circle_start_angle:-90,circle_sweep_angle:360,refresh_interval_ms:1000,label_format:defaults[kind]});selectedWidget=config.widgets.length-1;selectedWidgets=new Set([selectedWidget]);collapsedWidgets.delete(selectedWidget);renderWidgets();renderOverlay();scheduleLivePreview();};
 $("new-screen").onclick=async()=>{const name=askName(t("selectNewScreen"));if(!name)return;try{config=await invoke("new_screen",{name});currentScreen=name;collapseAllWidgets();bindConfig();await loadScreens(name);await refreshPreview();}catch(e){$("error").textContent=String(e);}};
 $("save-screen").onclick=async()=>{readForm();const name=askName(t("saveScreenName"),currentScreen);if(!name)return;try{await invoke("save_screen",{name,config});currentScreen=name;await loadScreens(name);$("status").textContent=t("screenSaved",{name});}catch(e){$("error").textContent=String(e);}};
 $("load-screen").onclick=async()=>{const name=$("screen-list").value;if(!name)return;config=await invoke("load_screen",{name});currentScreen=name;selectedWidget=-1;selectedWidgets.clear();collapseAllWidgets();bindConfig();await refreshPreview();};
 $("delete-screen").onclick=async()=>{const name=$("screen-list").value;if(!name||!confirm(t("deleteConfirm",{name})))return;await invoke("delete_screen",{name});if(currentScreen===name)currentScreen="";await loadScreens();};
+$("export-package").onclick=async()=>{try{readForm();await invoke("export_package",{config});}catch(e){$("error").textContent=String(e);}};
+$("import-package").onclick=async()=>{try{const imported=await invoke("import_package");if(!imported)return;config=imported;currentScreen="";collapseAllWidgets();bindConfig();await refreshPreview();}catch(e){$("error").textContent=String(e);}};
+document.querySelectorAll("[data-quick-load]").forEach(button => button.onclick=async()=>{
+  const slot=button.dataset.quickLoad;
+  const name=$(`quick-${slot}`).value;
+  if(!name)return;
+  config=await invoke("load_screen",{name});
+  currentScreen=name;
+  collapseAllWidgets();
+  bindConfig();
+  await loadScreens(name);
+  await refreshPreview();
+});
 $("render-toggle").onclick=toggleRendering;
 $("test-display").onclick=async()=>{try{await save();$("status").textContent=await invoke("test_display");}catch(e){$("error").textContent=`${t("testFailed")}: ${e}`;}};
-$("test-sensors").onclick=async()=>{try{const s=await invoke("test_sensors");await loadFanSensors(s);$("error").textContent="";$("status").textContent=`CPU ${fmt(s.cpu_temperature)}°C / ${fmt(s.cpu_clock)} MHz · GPU ${fmt(s.gpu_temperature)}°C / ${fmt(s.gpu_usage)}% / ${fmt(s.gpu_clock)} MHz / ${fmt(s.gpu_power)} W · RAM ${fmt(s.ram_usage)}% · ${t("diskLabel")} ${fmt(s.disk_usage)}% · ${t("networkLabel")} ↓${fmt(s.network_download)} ↑${fmt(s.network_upload)} KB/s`;}catch(e){$("error").textContent=`${t("sensorTestFailed")}: ${e}`;}};
+$("test-sensors").onclick=async()=>{try{const s=await invoke("test_sensors");await loadFanSensors(s);$("error").textContent="";$("status").textContent=`CPU ${fmt(s.cpu_temperature)}°C / ${fmt(s.cpu_clock)} MHz · GPU ${fmt(s.gpu_temperature)}°C / ${fmt(s.gpu_usage)}% / ${fmt(s.gpu_clock)} MHz / ${fmt(s.gpu_power)} W · RAM ${fmt(s.ram_usage)}% · VOL ${fmt(s.system_volume)}% · ${t("diskLabel")} ${fmt(s.disk_usage)}% · ${t("networkLabel")} ↓${fmt(s.network_download)} ↑${fmt(s.network_upload)} KB/s`;}catch(e){$("error").textContent=`${t("sensorTestFailed")}: ${e}`;}};
 $("send-once").onclick=async()=>{try{await save();await invoke("render_once");}catch(e){$("error").textContent=`${t("sendFailed")}: ${e}`;}};
 window.addEventListener("resize",renderOverlay);
 window.addEventListener("keydown", event => {
@@ -632,35 +787,6 @@ document.addEventListener("pointerdown", event => {
 });
 document.querySelectorAll("[data-layout-action]").forEach(button =>
   button.onclick = () => applyLayout(button.dataset.layoutAction));
-document.querySelectorAll("[data-preset]").forEach(button => button.onclick = () => applyPreset(button.dataset.preset));
-function applyPreset(name){
-  const styles={
-    gaming:{background:"#030409",foreground:"#eaffff",accent:"#31f6ff",secondary:"#ff3b81",frame:80,glow:7,shadow:5,opacity:1,thresholds:true},
-    minimal:{background:"#080b10",foreground:"#f4f7fb",accent:"#8da2b5",secondary:"#d6e1ea",frame:180,glow:0,shadow:0,opacity:.92,thresholds:false},
-    idle:{background:"#000000",foreground:"#77818c",accent:"#405060",secondary:"#263746",frame:600,glow:0,shadow:0,opacity:.65,thresholds:false}
-  };
-  const p=styles[name];config.background.colour=p.background;config.theme.foreground=p.foreground;
-  config.theme.accent=p.accent;config.frame_interval_ms=p.frame;
-  config.widgets.forEach((w,index)=>{
-    w.glow=p.glow;
-    w.shadow=p.shadow;
-    w.opacity=p.opacity;
-    w.secondary_colour=index%2===0?p.accent:p.secondary;
-    w.use_thresholds=p.thresholds && !["clock","date","text"].includes(w.kind);
-    w.warning_colour="#ffd166";
-    w.critical_colour="#ff3b5c";
-    if(name==="gaming" && w.render_mode!=="text"){
-      w.colour=index%2===0?"#31f6ff":"#ff3b81";
-    }
-    if(name==="minimal"){
-      w.colour=p.foreground;
-    }
-    if(name==="idle"){
-      w.colour=p.foreground;
-    }
-  });
-  bindConfig();scheduleLivePreview();$("status").textContent=t("presetApplied",{name});
-}
 window.addEventListener("turzx-language-changed", refreshTranslatedUi);
 function esc(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function fmt(v){return v==null?"--":Math.round(v);}

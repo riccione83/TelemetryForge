@@ -45,7 +45,7 @@ pub fn initialize(io: &mut SerialTransport) -> Result<DisplayRevision> {
     thread::sleep(Duration::from_millis(120));
 
     let mut response = [0u8; 6];
-    let size = io.read(&mut response)?;
+    let size = io.read_available(&mut response)?;
     io.clear_input()?;
     let revision = match response {
         [1, 1, 1, 1, 1, 1] => DisplayRevision::UsbMonitor35,

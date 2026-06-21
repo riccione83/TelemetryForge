@@ -7,10 +7,11 @@ An open-source Windows desktop application for TURZX/Turing Smart Screen
 
 - Visual drag-and-drop editor with live preview
 - Reusable YAML screen profiles
-- CPU, GPU, RAM, VRAM, disk, network and fan sensors
+- CPU, GPU, RAM, VRAM, disk, network, fan and Windows volume sensors
 - Text, bars, circular gauges and historical graphs
 - Per-widget fonts, gradients, opacity, glow, shadows and thresholds
 - Smooth animations and partial display updates
+- Automatic screen rules with fade, slide, dissolve and glitch transitions
 - English and Italian user interfaces
 
 ## Quick start
@@ -26,6 +27,10 @@ Always close `UsbMonitor.exe` before starting TelemetryForge.
 Configuration and saved screens are stored in
 `%LOCALAPPDATA%\TelemetryForge`, so Windows autostart works independently of
 the process working directory.
+
+Windows autostart uses an immediate Task Scheduler logon trigger instead of
+the delayed `HKCU\Run` startup queue. TelemetryForge starts minimized in the
+tray and begins rendering as soon as the user session is available.
 
 For complete English setup, editor and troubleshooting documentation, see
 [README.en.md](README.en.md).

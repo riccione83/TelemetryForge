@@ -1,9 +1,12 @@
 mod app_state;
 mod config;
 mod display_driver;
+mod package;
 mod renderer;
+mod scene;
 mod sensors;
 mod ui;
+mod windows_startup;
 
 use app_state::AppState;
 use tauri::{
@@ -11,17 +14,12 @@ use tauri::{
     tray::TrayIconBuilder,
     Manager,
 };
-use tauri_plugin_autostart::MacosLauncher;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_log::Builder::new().build())
-        .plugin(tauri_plugin_autostart::init(
-            MacosLauncher::LaunchAgent,
-            Some(vec!["--minimized"]),
-        ))
         .manage(AppState::load())
         .invoke_handler(tauri::generate_handler![
             ui::get_config,
@@ -31,12 +29,14 @@ pub fn run() {
             ui::load_screen,
             ui::new_screen,
             ui::delete_screen,
-            ui::load_neon_sample,
+            ui::export_package,
+            ui::import_package,
             ui::get_preview,
             ui::preview_config,
             ui::test_sensors,
             ui::select_background,
             ui::select_background_folder,
+            ui::select_gif,
             ui::list_displays,
             ui::start_rendering,
             ui::stop_rendering,

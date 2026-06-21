@@ -7,12 +7,13 @@ An open-source Windows desktop application for TURZX/Turing Smart Screen
 
 - Visual drag-and-drop screen editor with live preview
 - Reusable YAML screen profiles
-- CPU, GPU, RAM, VRAM, disk, network, fan and clock sensors
+- CPU, GPU, RAM, VRAM, disk, network, fan, Windows volume and clock sensors
 - Text, bars, circular gauges and historical graphs
 - Per-widget fonts, gradients, opacity, glow, shadows and thresholds
 - Multi-select, group movement, alignment and distribution
 - Smooth animations and partial display updates
-- Gaming, Minimal and Idle presets
+- Assignable Gaming, Minimal and Idle quick screens
+- Automatic screen rules and configurable screen transitions
 - English and Italian user interfaces
 - System tray and Windows autostart
 
@@ -57,6 +58,8 @@ Application data is stored in:
 This includes `config.yaml`, saved screens and bundled samples. Legacy data
 found next to the executable is migrated automatically. Windows autostart
 loads the last active configuration and starts rendering in the system tray.
+It uses an immediate Task Scheduler logon trigger instead of the delayed
+`HKCU\Run` startup queue.
 
 ## Release build
 
@@ -101,6 +104,27 @@ Each widget supports:
 - independent position and dimensions.
 
 Circular gauges also support thickness, start angle and sweep angle.
+
+The **System volume** widget reads the Windows default playback-device volume.
+It can be displayed as text, a bar, a circle or a historical graph without
+LibreHardwareMonitor.
+
+## Automatic screens and transitions
+
+Enable automation in the editor, choose an optional default screen and add
+rules in priority order. The first matching rule wins. Rules can switch screen
+when:
+
+- a named process is running, such as `game.exe`;
+- GPU temperature reaches a configured threshold;
+- CPU temperature reaches a configured threshold;
+- GPU or CPU usage stays above a configured percentage;
+- the PC has been idle for a configured number of seconds.
+
+Automatic rules continue running while TelemetryForge is hidden in the system
+tray. Screen changes can use no transition, fade, slide, dissolve or glitch,
+with a configurable duration. Each rule also has activation and return delays
+to prevent brief workload spikes from repeatedly switching screens.
 
 ## Background slideshow
 

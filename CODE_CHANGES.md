@@ -3,6 +3,77 @@
 This document tracks the most important user-facing and architectural changes
 made to TelemetryForge.
 
+## Unreleased
+
+### Automatic screens and transitions
+
+- Added ordered automatic rules for running processes, CPU/GPU temperature
+  thresholds, CPU/GPU usage thresholds and Windows idle time.
+- Added per-rule activation and return delays to prevent screen flapping from
+  short CPU/GPU load spikes.
+- Added an optional fallback screen when no rule matches.
+- Added fade, slide, dissolve and glitch transitions between saved screens.
+- Rules run inside the renderer and continue working while the editor is
+  hidden in the system tray.
+
+### Windows volume widget
+
+- Added the default Windows playback-device volume as a native sensor.
+- Added a Volume widget supporting text, bar, circle and historical graph
+  rendering without LibreHardwareMonitor.
+- Volume is polled independently at 100 ms and uses faster visual smoothing,
+  avoiding the multi-second delay of slower hardware sensors.
+
+### Faster Windows startup
+
+- Replaced the delayed `HKCU\Run` startup entry with an immediate Task
+  Scheduler logon trigger.
+- Added a priority-4, interactive, no-delay startup task that launches
+  TelemetryForge minimized and starts rendering.
+- Removed legacy duplicate `TelemetryForge` and `TurzxControl` startup entries.
+- Made the original Turing 3.5-inch `HELLO` probe non-blocking, removing up to
+  two seconds from display initialization.
+
+### CPU clock source
+
+- Added separate average and average-effective CPU clock readings.
+- Made average CPU clock the default dashboard value for intuitive MHz/GHz
+  reporting.
+- Added a selector for users who prefer the technically accurate effective
+  clock that includes sleeping cores.
+- CPU and GPU frequency text automatically switches from MHz to GHz at
+  1000 MHz.
+- New CPU/GPU temperature and frequency widgets receive useful CPU/GPU labels
+  and temperature units by default.
+
+### Animated GIF widgets
+
+- Added animated GIF as an independently movable and resizable widget.
+- Added GIF file selection, configurable FPS, looping and fit mode.
+- Preserved GIF transparency when compositing over dashboard backgrounds.
+- GIF animation participates in partial display updates, limiting USB traffic
+  to the widget's changed area.
+
+### Portable screen packages
+
+- Added import/export of a single `.telemetryforge` package.
+- Packages include YAML configuration, background images and animated GIF
+  widget assets.
+- Imported assets are extracted into the TelemetryForge local data directory
+  and paths are rewritten automatically.
+
+### Quick screens
+
+- Converted Gaming, Minimal and Idle from destructive style presets into
+  assignable quick-load slots for saved screens.
+- Removed the bundled Neon Sample action from the editor.
+
+### VRAM accuracy
+
+- Fixed VRAM usage accidentally reading GPU memory-controller load.
+- VRAM percentage is now calculated from dedicated memory used divided by
+  dedicated memory total, with the exact GPU Memory load sensor as fallback.
+
 ## Latest changes
 
 These changes are included in the current `main` branch and continuous Windows

@@ -24,12 +24,13 @@ impl SerialTransport {
         Ok(())
     }
 
-    pub fn read(&mut self, data: &mut [u8]) -> Result<usize> {
-        match self.port.read(data) {
-            Ok(size) => Ok(size),
-            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => Ok(0),
-            Err(error) => Err(error.into()),
+    pub fn read_available(&mut self, data: &mut [u8]) -> Result<usize> {
+        let available = self.port.bytes_to_read()? as usize;
+        if available == 0 {
+            return Ok(0);
         }
+        let size = available.min(data.len());
+        Ok(self.port.read(&mut data[..size])?)
     }
 
     pub fn flush(&mut self) -> Result<()> {

@@ -1,11 +1,9 @@
 use crate::{
     app_state::{AppState, RenderWorker},
-    config::{
-        persistence,
-        schema::{AppConfig, BackgroundMode, Orientation, WidgetConfig, WidgetKind},
-    },
-    display_driver, renderer,
+    config::{persistence, schema::AppConfig},
+    display_driver, package, renderer, scene,
     sensors::poller,
+    windows_startup,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use image::{Rgb, RgbImage};
@@ -19,8 +17,17 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::State;
-use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_dialog::DialogExt;
+
+fn merge_screen_settings(mut screen: AppConfig, current: &AppConfig) -> AppConfig {
+    screen.automation = current.automation.clone();
+    screen.transition = current.transition.clone();
+    screen.libre_hardware_monitor_dll = current.libre_hardware_monitor_dll.clone();
+    screen.cpu_temperature_source = current.cpu_temperature_source;
+    screen.cpu_clock_source = current.cpu_clock_source;
+    screen.fan_sensor = current.fan_sensor.clone();
+    screen
+}
 
 #[derive(Serialize)]
 pub struct Status {
@@ -60,9 +67,11 @@ pub fn save_screen(state: State<AppState>, name: String, config: AppConfig) -> R
 #[tauri::command]
 pub fn load_screen(state: State<AppState>, name: String) -> Result<AppConfig, String> {
     let path = persistence::profile_path(&state.config_path, &name).map_err(|e| e.to_string())?;
-    let config = persistence::load_or_create(&path).map_err(|e| e.to_string())?;
+    let loaded = persistence::load_or_create(&path).map_err(|e| e.to_string())?;
+    let config = merge_screen_settings(loaded, &state.config.read());
     persistence::save(&state.config_path, &config).map_err(|e| e.to_string())?;
     *state.config.write() = config.clone();
+    state.scene_revision.fetch_add(1, Ordering::Relaxed);
     Ok(config)
 }
 
@@ -72,7 +81,10 @@ pub fn new_screen(state: State<AppState>, name: String) -> Result<AppConfig, Str
     let mut config = AppConfig::default();
     config.display = current.display;
     config.libre_hardware_monitor_dll = current.libre_hardware_monitor_dll;
+    config.cpu_clock_source = current.cpu_clock_source;
     config.fan_sensor = current.fan_sensor;
+    config.automation = current.automation;
+    config.transition = current.transition;
     config.widgets.clear();
     let path = persistence::profile_path(&state.config_path, &name).map_err(|e| e.to_string())?;
     if path.exists() {
@@ -84,6 +96,7 @@ pub fn new_screen(state: State<AppState>, name: String) -> Result<AppConfig, Str
     persistence::save(&path, &config).map_err(|e| e.to_string())?;
     persistence::save(&state.config_path, &config).map_err(|e| e.to_string())?;
     *state.config.write() = config.clone();
+    state.scene_revision.fetch_add(1, Ordering::Relaxed);
     Ok(config)
 }
 
@@ -97,78 +110,47 @@ pub fn delete_screen(state: State<AppState>, name: String) -> Result<(), String>
 }
 
 #[tauri::command]
-pub fn load_neon_sample(state: State<AppState>) -> Result<AppConfig, String> {
-    let mut config = state.config.read().clone();
-    let background = state
-        .config_path
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .join("samples")
-        .join("neon-telemetry.png");
-    if !background.exists() {
-        if let Some(parent) = background.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        std::fs::write(
-            &background,
-            include_bytes!("../../samples/neon-telemetry.png"),
-        )
-        .map_err(|e| format!("Could not extract the sample: {e}"))?;
-    }
+pub async fn export_package(
+    app: tauri::AppHandle,
+    config: AppConfig,
+) -> Result<Option<String>, String> {
+    let Some(path) = app
+        .dialog()
+        .file()
+        .add_filter("TelemetryForge package", &["telemetryforge"])
+        .set_file_name("screen.telemetryforge")
+        .blocking_save_file()
+        .and_then(|path| path.as_path().map(std::path::Path::to_path_buf))
+    else {
+        return Ok(None);
+    };
+    package::export(&path, &config).map_err(|error| error.to_string())?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
 
-    config.display.width = 480;
-    config.display.height = 320;
-    config.display.orientation = Orientation::Landscape;
-    config.background.path = Some(background.to_string_lossy().into_owned());
-    config.background.source = crate::config::schema::BackgroundSource::File;
-    config.background.mode = BackgroundMode::Stretch;
-    config.background.colour = "#020407".into();
-    config.theme.name = "Neon Telemetry".into();
-    config.theme.foreground = "#eaffff".into();
-    config.theme.accent = "#3fffe5".into();
-    config.widgets = vec![
-        WidgetConfig::styled(WidgetKind::CpuUsage, 39, 65, 20.0, "#eaffff", "{value}%"),
-        WidgetConfig::styled(
-            WidgetKind::CpuTemperature,
-            112,
-            38,
-            15.0,
-            "#4dffe8",
-            "CPU {value}C",
-        ),
-        WidgetConfig::styled(WidgetKind::GpuUsage, 280, 65, 20.0, "#fff1f1", "{value}%"),
-        WidgetConfig::styled(
-            WidgetKind::GpuTemperature,
-            353,
-            38,
-            15.0,
-            "#ff6b72",
-            "GPU {value}C",
-        ),
-        WidgetConfig::styled(
-            WidgetKind::NetworkUpload,
-            76,
-            146,
-            14.0,
-            "#55fff0",
-            "UP {value}",
-        ),
-        WidgetConfig::styled(
-            WidgetKind::NetworkDownload,
-            300,
-            146,
-            14.0,
-            "#ff6f78",
-            "DOWN {value}",
-        ),
-        WidgetConfig::styled(WidgetKind::RamUsage, 40, 247, 19.0, "#eaffff", "{value}%"),
-        WidgetConfig::styled(WidgetKind::Clock, 213, 276, 15.0, "#ffffff", "{value}"),
-        WidgetConfig::styled(WidgetKind::DiskUsage, 357, 247, 18.0, "#70cfff", "{value}%"),
-    ];
-
-    persistence::save(&state.config_path, &config).map_err(|e| e.to_string())?;
+#[tauri::command]
+pub async fn import_package(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<AppConfig>, String> {
+    let Some(path) = app
+        .dialog()
+        .file()
+        .add_filter("TelemetryForge package", &["telemetryforge"])
+        .blocking_pick_file()
+        .and_then(|path| path.as_path().map(std::path::Path::to_path_buf))
+    else {
+        return Ok(None);
+    };
+    let name = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("imported");
+    let config = package::import(&path, name).map_err(|error| error.to_string())?;
+    persistence::save(&state.config_path, &config).map_err(|error| error.to_string())?;
     *state.config.write() = config.clone();
-    Ok(config)
+    state.scene_revision.fetch_add(1, Ordering::Relaxed);
+    Ok(Some(config))
 }
 
 #[tauri::command]
@@ -194,6 +176,7 @@ pub fn test_sensors(state: State<AppState>) -> crate::sensors::model::SensorSnap
     let snapshot = poller::read_snapshot(
         config.libre_hardware_monitor_dll.as_deref(),
         config.cpu_temperature_source,
+        config.cpu_clock_source,
         config.fan_sensor.as_deref(),
     );
     *state.sensors.write() = snapshot.clone();
@@ -217,6 +200,16 @@ pub async fn select_background_folder(app: tauri::AppHandle) -> Result<Option<St
 }
 
 #[tauri::command]
+pub async fn select_gif(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let file = app
+        .dialog()
+        .file()
+        .add_filter("Animated GIF", &["gif"])
+        .blocking_pick_file();
+    Ok(file.and_then(|path| path.as_path().map(|p| p.to_string_lossy().into_owned())))
+}
+
+#[tauri::command]
 pub fn list_displays() -> Result<Vec<display_driver::detection::DisplayPort>, String> {
     display_driver::detection::list().map_err(|e| e.to_string())
 }
@@ -227,6 +220,7 @@ pub fn render_once(state: State<AppState>) -> Result<(), String> {
     let snapshot = poller::read_snapshot(
         config.libre_hardware_monitor_dll.as_deref(),
         config.cpu_temperature_source,
+        config.cpu_clock_source,
         config.fan_sensor.as_deref(),
     );
     let image = renderer::render(&config, &snapshot).map_err(|e| e.to_string())?;
@@ -284,6 +278,8 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
     let config = state.config.clone();
     let sensors = state.sensors.clone();
     let status = state.status.clone();
+    let scene_revision = state.scene_revision.clone();
+    let config_path = state.config_path.clone();
     thread::Builder::new()
         .name("telemetryforge-renderer".into())
         .spawn(move || {
@@ -294,23 +290,38 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
             let mut target = sensor_poller.read(
                 initial.libre_hardware_monitor_dll.as_deref(),
                 initial.cpu_temperature_source,
+                initial.cpu_clock_source,
                 initial.fan_sensor.as_deref(),
             );
             let mut displayed = target.clone();
             let mut previous_frame: Option<RgbImage> = None;
             let mut last_sensor_poll = Instant::now();
+            let mut last_volume_poll = Instant::now() - Duration::from_millis(200);
             let mut applied_brightness = initial.display.brightness;
             let mut rendered_config: Option<AppConfig> = None;
             let mut rendered_dynamic_key = String::new();
             let mut rendered_visual_signature = 0;
+            let mut observed_scene_revision = scene_revision.load(Ordering::Relaxed);
+            let mut transition: Option<scene::Transition> = None;
+            let mut rule_engine = scene::RuleEngine::new();
+            let mut last_rule_check = Instant::now() - Duration::from_secs(2);
+            let mut active_rule_screen: Option<String> = None;
+            let mut active_rule_revision = observed_scene_revision;
             while !thread_stop.load(Ordering::Relaxed) {
-                let current = config.read().clone();
+                let mut current = config.read().clone();
+                if volume_widget_enabled(&current)
+                    && last_volume_poll.elapsed() >= Duration::from_millis(100)
+                {
+                    target.system_volume = sensor_poller.read_system_volume();
+                    last_volume_poll = Instant::now();
+                }
                 if last_sensor_poll.elapsed()
                     >= Duration::from_millis(current.sensor_poll_ms.max(250))
                 {
                     let mut next = sensor_poller.read(
                         current.libre_hardware_monitor_dll.as_deref(),
                         current.cpu_temperature_source,
+                        current.cpu_clock_source,
                         current.fan_sensor.as_deref(),
                     );
                     update_histories(&mut next, &target, 120);
@@ -319,19 +330,72 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
                 }
                 interpolate_snapshot(&mut displayed, &target, 0.22);
                 *sensors.write() = displayed.clone();
+                if last_rule_check.elapsed() >= Duration::from_secs(1) {
+                    let current_revision = scene_revision.load(Ordering::Relaxed);
+                    if current_revision != active_rule_revision {
+                        active_rule_screen = None;
+                        active_rule_revision = current_revision;
+                    }
+                    let requested = rule_engine.target_screen(&current, &displayed);
+                    if requested != active_rule_screen {
+                        if let Some(name) = requested.as_deref() {
+                            if let Ok(path) = persistence::profile_path(&config_path, name) {
+                                match persistence::load_or_create(&path) {
+                                    Ok(loaded) => {
+                                        let switched = merge_screen_settings(loaded, &current);
+                                        if let Err(error) = persistence::save(&config_path, &switched)
+                                        {
+                                            tracing::error!(%error, "could not persist automatic screen");
+                                        } else {
+                                            *config.write() = switched.clone();
+                                            current = switched;
+                                            active_rule_revision =
+                                                scene_revision.fetch_add(1, Ordering::Relaxed) + 1;
+                                            active_rule_screen = requested.clone();
+                                            *status.write() =
+                                                format!("Automatic screen: {name}");
+                                        }
+                                    }
+                                    Err(error) => tracing::error!(
+                                        %error,
+                                        screen = name,
+                                        "could not load automatic screen"
+                                    ),
+                                }
+                            }
+                        } else {
+                            active_rule_screen = None;
+                        }
+                    }
+                    last_rule_check = Instant::now();
+                }
+                let revision = scene_revision.load(Ordering::Relaxed);
+                if revision != observed_scene_revision {
+                    transition = previous_frame.clone().and_then(|frame| {
+                        scene::Transition::new(
+                            frame,
+                            current.transition.kind,
+                            current.transition.duration_ms,
+                        )
+                    });
+                    observed_scene_revision = revision;
+                }
                 let dynamic_key = renderer_dynamic_key(&current);
                 let visual_signature = renderer::visual_signature(&current, &displayed);
                 let should_render = previous_frame.is_none()
+                    || transition.is_some()
                     || rendered_config.as_ref() != Some(&current)
                     || rendered_dynamic_key != dynamic_key
                     || rendered_visual_signature != visual_signature;
                 if !should_render {
-                    thread::sleep(Duration::from_millis(
-                        current.frame_interval_ms.clamp(50, 1000),
-                    ));
+                    thread::sleep(renderer_sleep_interval(&current, transition.is_some()));
                     continue;
                 }
-                let result = renderer::render(&current, &displayed).and_then(|image| {
+                let result = renderer::render(&current, &displayed).and_then(|target_image| {
+                    let (image, transition_finished) = transition
+                        .as_ref()
+                        .map(|animation| animation.frame(&target_image))
+                        .unwrap_or((target_image, true));
                     if session.is_none() {
                         session = Some(display_driver::DisplaySession::connect(&current.display)?);
                         applied_brightness = current.display.brightness;
@@ -352,9 +416,12 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
                         session = None;
                     } else {
                         previous_frame = Some(image);
-                        rendered_config = Some(current.clone());
-                        rendered_dynamic_key = dynamic_key.clone();
-                        rendered_visual_signature = visual_signature;
+                        if transition_finished {
+                            transition = None;
+                            rendered_config = Some(current.clone());
+                            rendered_dynamic_key = dynamic_key.clone();
+                            rendered_visual_signature = visual_signature;
+                        }
                     }
                     send_result
                 });
@@ -362,9 +429,7 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
                     Ok(()) => "Rendering active".into(),
                     Err(error) => format!("Error: {error:#}"),
                 };
-                thread::sleep(Duration::from_millis(
-                    current.frame_interval_ms.clamp(50, 1000),
-                ));
+                thread::sleep(renderer_sleep_interval(&current, transition.is_some()));
             }
             *status.write() = "Stopped".into();
         })
@@ -404,12 +469,24 @@ fn interpolate_snapshot(
     );
     changed |= blend(&mut current.cpu_usage, target.cpu_usage, amount);
     changed |= blend(&mut current.cpu_clock, target.cpu_clock, amount);
+    changed |= blend(
+        &mut current.cpu_clock_average,
+        target.cpu_clock_average,
+        amount,
+    );
+    changed |= blend(
+        &mut current.cpu_clock_effective,
+        target.cpu_clock_effective,
+        amount,
+    );
     changed |= blend(&mut current.gpu_temperature, target.gpu_temperature, amount);
     changed |= blend(&mut current.gpu_usage, target.gpu_usage, amount);
     changed |= blend(&mut current.gpu_clock, target.gpu_clock, amount);
     changed |= blend(&mut current.gpu_power, target.gpu_power, amount);
     changed |= blend(&mut current.ram_usage, target.ram_usage, amount);
     changed |= blend(&mut current.vram_usage, target.vram_usage, amount);
+    changed |= blend(&mut current.vram_used_mb, target.vram_used_mb, amount);
+    changed |= blend(&mut current.vram_total_mb, target.vram_total_mb, amount);
     changed |= blend(&mut current.disk_usage, target.disk_usage, amount);
     changed |= blend(&mut current.network_upload, target.network_upload, amount);
     changed |= blend(
@@ -418,6 +495,7 @@ fn interpolate_snapshot(
         amount,
     );
     changed |= blend(&mut current.fan_speed, target.fan_speed, amount);
+    changed |= blend(&mut current.system_volume, target.system_volume, 0.68);
     if current.history_cpu != target.history_cpu {
         current.history_cpu.clone_from(&target.history_cpu);
         changed = true;
@@ -444,8 +522,30 @@ fn interpolate_snapshot(
             .clone_from(&target.history_network_download);
         changed = true;
     }
+    if current.history_volume != target.history_volume {
+        current.history_volume.clone_from(&target.history_volume);
+        changed = true;
+    }
     current.fan_sensors.clone_from(&target.fan_sensors);
     changed
+}
+
+fn volume_widget_enabled(config: &AppConfig) -> bool {
+    use crate::config::schema::WidgetKind;
+    config
+        .widgets
+        .iter()
+        .any(|widget| widget.enabled && widget.kind == WidgetKind::Volume)
+}
+
+fn renderer_sleep_interval(config: &AppConfig, transition_active: bool) -> Duration {
+    if transition_active {
+        Duration::from_millis(50)
+    } else if volume_widget_enabled(config) {
+        Duration::from_millis(config.frame_interval_ms.clamp(50, 100))
+    } else {
+        Duration::from_millis(config.frame_interval_ms.clamp(50, 1000))
+    }
 }
 
 fn renderer_dynamic_key(config: &AppConfig) -> String {
@@ -510,6 +610,7 @@ fn update_histories(
         next.network_download,
         limit,
     );
+    next.history_volume = append(previous.history_volume.clone(), next.system_volume, limit);
 }
 
 fn send_changed_region(
@@ -565,16 +666,11 @@ pub fn get_status(state: State<AppState>) -> Status {
 }
 
 #[tauri::command]
-pub fn get_autostart(app: tauri::AppHandle) -> Result<bool, String> {
-    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+pub fn get_autostart() -> Result<bool, String> {
+    windows_startup::is_enabled().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    if enabled {
-        app.autolaunch().enable()
-    } else {
-        app.autolaunch().disable()
-    }
-    .map_err(|e| e.to_string())
+pub fn set_autostart(enabled: bool) -> Result<(), String> {
+    windows_startup::set_enabled(enabled).map_err(|e| e.to_string())
 }

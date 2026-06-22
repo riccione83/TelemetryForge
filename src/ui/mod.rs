@@ -29,18 +29,113 @@ fn merge_screen_settings(mut screen: AppConfig, current: &AppConfig) -> AppConfi
     screen.cpu_temperature_source = current.cpu_temperature_source;
     screen.cpu_clock_source = current.cpu_clock_source;
     screen.fan_sensor = current.fan_sensor.clone();
+    screen.remote = current.remote.clone();
+    screen.quick_screens = current.quick_screens.clone();
     screen
 }
 
 #[derive(Serialize)]
 pub struct Status {
-    running: bool,
-    message: String,
+    pub running: bool,
+    pub message: String,
+}
+
+#[derive(Serialize)]
+pub struct RemoteInfo {
+    pub enabled: bool,
+    pub server_running: bool,
+    pub url: String,
+    pub warning: String,
+    pub authentication_enabled: bool,
+    pub username: String,
+}
+
+#[tauri::command]
+pub fn get_remote_info(state: State<AppState>) -> RemoteInfo {
+    remote_info_state(&state)
+}
+
+pub fn remote_info_state(state: &AppState) -> RemoteInfo {
+    let config = state.config.read();
+    RemoteInfo {
+        enabled: config.remote.enabled,
+        server_running: config.remote.enabled,
+        url: format!("http://{}:8787", local_network_address()),
+        warning: if config.remote.authentication_enabled {
+            "Remote Deck is protected by username and password.".into()
+        } else {
+            "No authentication. Use only on a trusted local network.".into()
+        },
+        authentication_enabled: config.remote.authentication_enabled,
+        username: config.remote.username.clone(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct RemoteSecurityUpdate {
+    pub enabled: bool,
+    pub authentication_enabled: bool,
+    pub username: String,
+    pub password: String,
+}
+
+#[tauri::command]
+pub fn set_remote_security(
+    state: State<AppState>,
+    settings: RemoteSecurityUpdate,
+) -> Result<RemoteInfo, String> {
+    set_remote_security_state(&state, settings)?;
+    Ok(remote_info_state(&state))
+}
+
+pub fn set_remote_security_state(
+    state: &AppState,
+    settings: RemoteSecurityUpdate,
+) -> Result<(), String> {
+    let username = settings.username.trim();
+    if settings.authentication_enabled && username.is_empty() {
+        return Err("Username cannot be empty".into());
+    }
+    let mut config = state.config.write();
+    config.remote.enabled = settings.enabled;
+    config.remote.username = if username.is_empty() {
+        "admin".into()
+    } else {
+        username.into()
+    };
+    if !settings.password.is_empty() {
+        config.remote.password_hash = crate::remote_auth::hash_password(&settings.password)?;
+    }
+    if settings.authentication_enabled && config.remote.password_hash.is_empty() {
+        return Err("Set a password before enabling authentication".into());
+    }
+    config.remote.authentication_enabled = settings.authentication_enabled;
+    persistence::save(&state.config_path, &config).map_err(|error| error.to_string())
+}
+
+fn local_network_address() -> String {
+    std::net::UdpSocket::bind("0.0.0.0:0")
+        .and_then(|socket| {
+            socket.connect("8.8.8.8:80")?;
+            socket.local_addr()
+        })
+        .map(|address| address.ip().to_string())
+        .unwrap_or_else(|_| "127.0.0.1".into())
 }
 
 #[tauri::command]
 pub fn get_config(state: State<AppState>) -> AppConfig {
-    state.config.read().clone()
+    public_config(state.config.read().clone())
+}
+
+pub fn public_config(mut config: AppConfig) -> AppConfig {
+    config.remote.password_hash.clear();
+    config
+}
+
+pub fn profile_config(mut config: AppConfig) -> AppConfig {
+    config.remote.password_hash.clear();
+    config
 }
 
 #[tauri::command]
@@ -55,7 +150,8 @@ fn set_active_screen(state: &AppState, name: Option<&str>) -> Result<(), String>
 }
 
 #[tauri::command]
-pub fn save_config(state: State<AppState>, config: AppConfig) -> Result<(), String> {
+pub fn save_config(state: State<AppState>, mut config: AppConfig) -> Result<(), String> {
+    config.remote = state.config.read().remote.clone();
     persistence::save(&state.config_path, &config).map_err(|e| e.to_string())?;
     *state.config.write() = config;
     Ok(())
@@ -67,12 +163,49 @@ pub fn list_screens(state: State<AppState>) -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-pub fn save_screen(state: State<AppState>, name: String, config: AppConfig) -> Result<(), String> {
+pub fn set_quick_screen(
+    state: State<AppState>,
+    slot: String,
+    screen: Option<String>,
+) -> Result<(), String> {
+    set_quick_screen_state(&state, &slot, screen)
+}
+
+pub fn set_quick_screen_state(
+    state: &AppState,
+    slot: &str,
+    screen: Option<String>,
+) -> Result<(), String> {
+    let screen = screen.filter(|value| !value.trim().is_empty());
+    if let Some(name) = screen.as_deref() {
+        let path = persistence::profile_path(&state.config_path, name)
+            .map_err(|error| error.to_string())?;
+        if !path.is_file() {
+            return Err(format!("Screen does not exist: {name}"));
+        }
+    }
+    let mut config = state.config.write();
+    match slot {
+        "gaming" => config.quick_screens.gaming = screen,
+        "minimal" => config.quick_screens.minimal = screen,
+        "idle" => config.quick_screens.idle = screen,
+        _ => return Err("Invalid Quick Screen slot".into()),
+    }
+    persistence::save(&state.config_path, &config).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn save_screen(
+    state: State<AppState>,
+    name: String,
+    mut config: AppConfig,
+) -> Result<(), String> {
+    config.remote = state.config.read().remote.clone();
     let path = persistence::profile_path(&state.config_path, &name).map_err(|e| e.to_string())?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    persistence::save(&path, &config).map_err(|e| e.to_string())?;
+    persistence::save(&path, &profile_config(config.clone())).map_err(|e| e.to_string())?;
     persistence::save(&state.config_path, &config).map_err(|e| e.to_string())?;
     *state.config.write() = config;
     set_active_screen(&state, Some(&name))?;
@@ -88,7 +221,7 @@ pub fn load_screen(state: State<AppState>, name: String) -> Result<AppConfig, St
     *state.config.write() = config.clone();
     set_active_screen(&state, Some(&name))?;
     state.scene_revision.fetch_add(1, Ordering::Relaxed);
-    Ok(config)
+    Ok(public_config(config))
 }
 
 #[tauri::command]
@@ -99,6 +232,8 @@ pub fn new_screen(state: State<AppState>, name: String) -> Result<AppConfig, Str
     config.libre_hardware_monitor_dll = current.libre_hardware_monitor_dll;
     config.cpu_clock_source = current.cpu_clock_source;
     config.fan_sensor = current.fan_sensor;
+    config.remote = current.remote;
+    config.quick_screens = current.quick_screens;
     config.automation = current.automation;
     config.transition = current.transition;
     config.widgets.clear();
@@ -109,12 +244,12 @@ pub fn new_screen(state: State<AppState>, name: String) -> Result<AppConfig, Str
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    persistence::save(&path, &config).map_err(|e| e.to_string())?;
+    persistence::save(&path, &profile_config(config.clone())).map_err(|e| e.to_string())?;
     persistence::save(&state.config_path, &config).map_err(|e| e.to_string())?;
     *state.config.write() = config.clone();
     set_active_screen(&state, Some(&name))?;
     state.scene_revision.fetch_add(1, Ordering::Relaxed);
-    Ok(config)
+    Ok(public_config(config))
 }
 
 #[tauri::command]
@@ -166,12 +301,14 @@ pub async fn import_package(
         .file_stem()
         .and_then(|value| value.to_str())
         .unwrap_or("imported");
-    let config = package::import(&path, name).map_err(|error| error.to_string())?;
+    let mut config = package::import(&path, name).map_err(|error| error.to_string())?;
+    config.remote = state.config.read().remote.clone();
+    config.quick_screens = state.config.read().quick_screens.clone();
     persistence::save(&state.config_path, &config).map_err(|error| error.to_string())?;
     *state.config.write() = config.clone();
     set_active_screen(&state, None)?;
     state.scene_revision.fetch_add(1, Ordering::Relaxed);
-    Ok(Some(config))
+    Ok(Some(public_config(config)))
 }
 
 #[tauri::command]
@@ -313,6 +450,10 @@ pub fn set_display_brightness(state: State<AppState>, brightness: u8) -> Result<
 
 #[tauri::command]
 pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
+    start_rendering_state(&state)
+}
+
+pub fn start_rendering_state(state: &AppState) -> Result<(), String> {
     let mut worker = state.worker.lock();
     if worker.is_some() {
         return Ok(());
@@ -815,6 +956,10 @@ fn dirty_regions(previous: &RgbImage, current: &RgbImage) -> Vec<DirtyRegion> {
 
 #[tauri::command]
 pub fn stop_rendering(state: State<AppState>) {
+    stop_rendering_state(&state);
+}
+
+pub fn stop_rendering_state(state: &AppState) {
     if let Some(worker) = state.worker.lock().take() {
         worker.stop.store(true, Ordering::Relaxed);
     }
@@ -822,6 +967,10 @@ pub fn stop_rendering(state: State<AppState>) {
 
 #[tauri::command]
 pub fn get_status(state: State<AppState>) -> Status {
+    get_status_state(&state)
+}
+
+pub fn get_status_state(state: &AppState) -> Status {
     Status {
         running: state.worker.lock().is_some(),
         message: state.status.read().clone(),
@@ -876,5 +1025,16 @@ mod tests {
                 height: 64,
             }]
         );
+    }
+
+    #[test]
+    fn browser_and_profile_configs_do_not_expose_password_hashes() {
+        let mut config = AppConfig::default();
+        config.remote.password_hash = "$argon2id$secret-hash".into();
+        assert!(public_config(config.clone())
+            .remote
+            .password_hash
+            .is_empty());
+        assert!(profile_config(config).remote.password_hash.is_empty());
     }
 }

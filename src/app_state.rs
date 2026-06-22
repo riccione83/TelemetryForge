@@ -10,11 +10,12 @@ pub struct RenderWorker {
     pub stop: Arc<AtomicBool>,
 }
 
+#[derive(Clone)]
 pub struct AppState {
     pub config_path: PathBuf,
     pub config: Arc<RwLock<AppConfig>>,
     pub sensors: Arc<RwLock<SensorSnapshot>>,
-    pub worker: Mutex<Option<RenderWorker>>,
+    pub worker: Arc<Mutex<Option<RenderWorker>>>,
     pub status: Arc<RwLock<String>>,
     pub scene_revision: Arc<AtomicU64>,
     pub active_screen: Arc<RwLock<Option<String>>>,
@@ -42,7 +43,7 @@ impl AppState {
             config_path,
             config: Arc::new(RwLock::new(config)),
             sensors: Arc::new(RwLock::new(SensorSnapshot::default())),
-            worker: Mutex::new(None),
+            worker: Arc::new(Mutex::new(None)),
             status: Arc::new(RwLock::new("Stopped".into())),
             scene_revision: Arc::new(AtomicU64::new(0)),
             active_screen: Arc::new(RwLock::new(active_screen)),

@@ -16,6 +16,25 @@ pub struct AppConfig {
     pub fan_sensor: Option<String>,
     pub automation: AutomationConfig,
     pub transition: TransitionConfig,
+    pub remote: RemoteConfig,
+    pub quick_screens: QuickScreensConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct QuickScreensConfig {
+    pub gaming: Option<String>,
+    pub minimal: Option<String>,
+    pub idle: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RemoteConfig {
+    pub enabled: bool,
+    pub authentication_enabled: bool,
+    pub username: String,
+    pub password_hash: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -234,6 +253,19 @@ impl Default for AppConfig {
             fan_sensor: None,
             automation: AutomationConfig::default(),
             transition: TransitionConfig::default(),
+            remote: RemoteConfig::default(),
+            quick_screens: QuickScreensConfig::default(),
+        }
+    }
+}
+
+impl Default for RemoteConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            authentication_enabled: false,
+            username: "admin".into(),
+            password_hash: String::new(),
         }
     }
 }

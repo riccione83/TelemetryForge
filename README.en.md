@@ -185,6 +185,37 @@ TelemetryForge keeps the COM port open during continuous rendering and sends
 only changed display regions. Distant animated elements are divided into
 independent small rectangles instead of forcing a large bounding-box update.
 
+## Remote Deck LAN
+
+TelemetryForge includes an embedded web version of the editor. While the
+Windows application is running, open the address shown in its header, usually:
+
+```text
+http://192.168.1.x:8787
+```
+
+The remote editor supports live preview, drag-and-drop editing, screens,
+widgets, Super Widgets, sensors, automation, brightness and rendering
+controls. It uses the Windows PC for hardware sensors and USB display access.
+Gaming, Minimal and Idle Quick Screen assignments are shared with the Windows
+application.
+The complete Remote Deck server can be enabled or disabled from the desktop
+security panel; disabling it closes port `8787` without restarting the app.
+
+The first Remote Deck MVP does not yet support browser uploads/downloads for
+backgrounds, GIFs, screen packages or `.superwidget` packages. Use the Windows
+application for those file operations.
+
+Remote Deck authentication can be enabled from **Remote Deck security** in the
+Windows application. Choose a username and a password of at least eight
+characters. Passwords are stored only as Argon2 hashes. Once enabled, browsers
+show their native username/password prompt before loading any page or API.
+
+Until authentication is configured, use Remote Deck only on a trusted LAN.
+Even with authentication enabled, do not forward port `8787` directly on your
+router; encrypted remote access will be added separately. Windows may ask for
+firewall permission on first launch—allow private networks only.
+
 ## Troubleshooting
 
 ### Display not detected

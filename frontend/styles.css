@@ -1,6 +1,8 @@
 :root { color-scheme: dark; font-family: Inter, "Segoe UI", sans-serif; background: #0b0f14; color: #edf4ff; }
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 15% 0%, #162c31 0, transparent 30%), #0b0f14; }
+.remote-badge { color: #ffcf66; font-size: 11px; letter-spacing: .12em; margin: 4px 0 0; }
+.remote-deck header { border-bottom-color: rgba(255,207,102,.35); }
 header { display: flex; justify-content: space-between; align-items: center; padding: 24px 32px; border-bottom: 1px solid #25303c; }
 h1, h2, p { margin: 0; } h1 { font-size: 28px; } h2 { font-size: 17px; }
 .eyebrow { color: #64d8cb; font-size: 11px; letter-spacing: .18em; font-weight: 700; margin-bottom: 5px; }
@@ -59,6 +61,8 @@ button:disabled { opacity: .58; cursor: wait; }
 #render-toggle.running:hover { background: #b83b46; }
 button.compact { padding: 6px 9px; font-size: 11px; }
 #status { padding: 8px 11px; background: #16212b; border-radius: 999px; color: #9fb0c2; font-size: 13px; }
+.remote-url { color: #64d8cb; font-size: 12px; text-decoration: none; }
+.remote-url:hover { text-decoration: underline; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
 label { display: grid; gap: 6px; color: #9fb0c2; font-size: 12px; }
 .checkline { display: flex; align-items: center; gap: 8px; color: #dce7f3; }
@@ -94,3 +98,16 @@ input[type="color"]::-webkit-color-swatch { border: 1px solid rgba(255,255,255,.
 .automation-rule { display: grid; grid-template-columns: auto repeat(5,minmax(120px,1fr)) auto; gap: 10px; align-items: end; margin-top: 12px; padding: 12px; border: 1px solid rgba(100,216,203,.22); border-radius: 12px; background: rgba(5,10,16,.28); }
 @media (max-width: 960px) { main { grid-template-columns: 1fr; } .preview-card { position: static; } .profile-row { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 900px) { .automation-rule { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 620px) {
+  header { align-items: flex-start; gap: 14px; padding: 16px; }
+  header, header .actions { flex-direction: column; }
+  main { min-width: 0; gap: 14px; padding: 14px; }
+  .preview-card, .card { padding: 13px; border-radius: 12px; }
+  .preview-head { align-items: flex-start; flex-direction: column; }
+  .preview-head .actions, .actions, .row { width: 100%; flex-wrap: wrap; }
+  .grid, .profile-row, .widget-fields, .automation-rule { grid-template-columns: 1fr; }
+  .widget-fields .wide { grid-column: span 1; }
+  .quick-screen-select { width: 100%; }
+  button { min-height: 42px; }
+  .screen { max-width: 100%; }
+}

@@ -19,6 +19,31 @@ let availableScreens = [];
 let availableSuperWidgets = [];
 let availableFanSensors = [];
 
+function applyRemoteInfo(info) {
+  $("remote-enabled").checked = !!info.enabled;
+  $("remote-auth-enabled").disabled = !info.enabled;
+  $("remote-auth-enabled").checked = !!info.authentication_enabled;
+  $("remote-username").disabled = !info.enabled;
+  $("remote-password").disabled = !info.enabled;
+  $("remote-username").value = info.username || "admin";
+  if ($("remote-url")) {
+    $("remote-url").href = info.enabled
+      ? (window.TelemetryForgeRemote ? location.href : info.url)
+      : "";
+    $("remote-url").textContent = info.enabled
+      ? (window.TelemetryForgeRemote ? "Remote Deck" : `Remote: ${info.url}`)
+      : "Remote Deck disabled";
+    $("remote-url").title = info.warning || "";
+  }
+  if ($("remote-badge")) {
+    $("remote-badge").textContent = !info.enabled
+      ? "REMOTE DECK · DISABLED"
+      : info.authentication_enabled
+        ? "REMOTE DECK · AUTHENTICATED"
+        : "REMOTE DECK · LAN ONLY · NO AUTHENTICATION";
+  }
+}
+
 const nameKeys = {
   cpu_temperature:"widgetCpuTemp",cpu_usage:"widgetCpuUsage",cpu_clock:"widgetCpuClock",gpu_temperature:"widgetGpuTemp",
   gpu_usage:"widgetGpuUsage",gpu_clock:"widgetGpuClock",gpu_power:"widgetGpuPower",ram_usage:"widgetRam",vram_usage:"widgetVram",
@@ -65,6 +90,24 @@ function refreshTranslatedUi() {
 async function boot() {
   config = await invoke("get_config");
   currentScreen = await invoke("get_active_screen").catch(() => "") || "";
+  config.quick_screens ||= {gaming:null,minimal:null,idle:null};
+  if (!window.TelemetryForgeRemote) {
+    let migrated = false;
+    for (const slot of ["gaming","minimal","idle"]) {
+      const legacy = localStorage.getItem(`telemetryforge-quick-${slot}`) || "";
+      if (!config.quick_screens[slot] && legacy) {
+        config.quick_screens[slot] = legacy;
+        await invoke("set_quick_screen",{slot,screen:legacy}).catch(()=>{});
+        migrated = true;
+      }
+      localStorage.removeItem(`telemetryforge-quick-${slot}`);
+    }
+    if (migrated) config = await invoke("get_config");
+  }
+  const remoteInfo = await invoke("get_remote_info").catch(() => null);
+  if (remoteInfo) {
+    applyRemoteInfo(remoteInfo);
+  }
   collapseAllWidgets();
   refreshTranslatedUi();
   bindConfig();
@@ -146,12 +189,21 @@ async function loadScreens(selected = currentScreen) {
   updateScreenSaveButton();
   for (const slot of ["gaming","minimal","idle"]) {
     const select = $(`quick-${slot}`);
-    const assigned = localStorage.getItem(`telemetryforge-quick-${slot}`) || "";
+    const assigned = config.quick_screens?.[slot] || "";
     select.className = "quick-screen-select";
     select.innerHTML = `<option value="">—</option>` +
       screens.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
     select.value = screens.includes(assigned) ? assigned : "";
-    select.onchange = () => localStorage.setItem(`telemetryforge-quick-${slot}`, select.value);
+    select.onchange = async () => {
+      const screen=select.value||null;
+      config.quick_screens[slot]=screen;
+      try{
+        await invoke("set_quick_screen",{slot,screen});
+        $("error").textContent="";
+      }catch(error){
+        $("error").textContent=String(error);
+      }
+    };
   }
   populateAutomationScreens();
   renderRules();
@@ -838,6 +890,26 @@ $("brightness").oninput=()=>{
   },180);
 };
 $("save").onclick=save;
+async function saveRemoteSecurity(){
+  try{
+    const settings={
+      enabled:$("remote-enabled").checked,
+      authentication_enabled:$("remote-auth-enabled").checked,
+      username:$("remote-username").value.trim(),
+      password:$("remote-password").value
+    };
+    const updated=await invoke("set_remote_security",{settings});
+    $("remote-password").value="";
+    applyRemoteInfo(updated);
+    $("remote-security-status").textContent=t("remoteSecuritySaved");
+    $("error").textContent="";
+  }catch(error){
+    $("error").textContent=String(error);
+  }
+}
+$("save-remote-security").onclick=saveRemoteSecurity;
+$("remote-enabled").onchange=saveRemoteSecurity;
+$("remote-auth-enabled").onchange=saveRemoteSecurity;
 $("add-rule").onclick=()=>{
   config.automation.rules.push({enabled:true,kind:"process_running",process_name:"",threshold:80,idle_seconds:300,sustain_seconds:3,release_seconds:8,screen:""});
   renderRules();

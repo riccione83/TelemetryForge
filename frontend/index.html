@@ -17,6 +17,7 @@
         <select id="language"><option value="en">English</option><option value="it">Italiano</option></select>
       </label>
       <span id="status" data-i18n="loading">Loading…</span>
+      <a id="remote-url" class="remote-url" target="_blank" rel="noreferrer"></a>
       <button id="render-toggle" data-i18n="startRendering">Start rendering</button>
     </div>
   </header>
@@ -98,6 +99,19 @@
           </label>
           <label class="checkline"><input id="autostart" type="checkbox" /><span data-i18n="startWithWindows">Start with Windows</span></label>
         </div>
+      </div>
+      <div class="card">
+        <div class="preview-head">
+          <h2 data-i18n="remoteSecurity">Remote Deck security</h2>
+          <button id="save-remote-security" class="secondary" data-i18n="saveRemoteSecurity">Save security</button>
+        </div>
+        <div class="grid">
+          <label class="checkline"><input id="remote-enabled" type="checkbox" /><span data-i18n="enableRemoteDeck">Enable Remote Deck server</span></label>
+          <label class="checkline"><input id="remote-auth-enabled" type="checkbox" /><span data-i18n="enableRemoteAuthentication">Require username and password</span></label>
+          <label><span data-i18n="remoteUsername">Username</span><input id="remote-username" autocomplete="username" /></label>
+          <label><span data-i18n="remotePassword">New password</span><input id="remote-password" type="password" minlength="8" autocomplete="new-password" /></label>
+        </div>
+        <p id="remote-security-status" class="hint" data-i18n="remotePasswordHint">Leave the password empty to keep the current password.</p>
       </div>
       <div class="card">
         <div class="preview-head">

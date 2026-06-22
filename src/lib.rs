@@ -2,6 +2,8 @@ mod app_state;
 mod config;
 mod display_driver;
 mod package;
+mod remote_auth;
+mod remote_server;
 mod renderer;
 mod scene;
 mod sensors;
@@ -24,9 +26,12 @@ pub fn run() {
         .manage(AppState::load())
         .invoke_handler(tauri::generate_handler![
             ui::get_config,
+            ui::get_remote_info,
+            ui::set_remote_security,
             ui::get_active_screen,
             ui::save_config,
             ui::list_screens,
+            ui::set_quick_screen,
             ui::save_screen,
             ui::load_screen,
             ui::new_screen,
@@ -58,6 +63,8 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            let remote_state = app.state::<AppState>().inner().clone();
+            tauri::async_runtime::spawn(remote_server::manage(remote_state));
             let show = MenuItem::with_id(app, "show", "Open TelemetryForge", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;

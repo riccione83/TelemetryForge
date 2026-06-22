@@ -3,6 +3,36 @@
 This document tracks the most important user-facing and architectural changes
 made to TelemetryForge.
 
+## Unreleased
+
+### Remote Deck LAN
+
+- Added an embedded Rust web server on port `8787`.
+- Reused the complete Tauri editor through an HTTP-compatible command bridge.
+- Added remote live preview, drag-and-drop editing, screen management,
+  widgets, automation, sensors, rendering controls and display actions.
+- Added a responsive phone layout and a visible LAN address in the desktop
+  application.
+- Disabled file-picker actions in the first remote MVP until secure HTTP
+  upload/download support is added.
+- Added optional username/password protection configurable from the desktop
+  application.
+- Added a master Remote Deck switch that starts and stops the port 8787
+  listener without restarting TelemetryForge.
+- Saved Remote Deck and authentication checkbox changes immediately and kept
+  their desktop state synchronized with the backend.
+- Protected static files, previews and every remote API command with HTTP
+  Basic authentication.
+- Stored passwords as salted Argon2 hashes and kept hashes out of browser API
+  responses.
+
+### Shared Quick Screens
+
+- Moved Gaming, Minimal and Idle assignments from WebView-local storage into
+  the shared application configuration.
+- Synchronized Quick Screens between the Windows app and Remote Deck.
+- Added one-time migration of existing desktop assignments.
+
 ## 0.2.0 — 2026-06-22
 
 ### Rust/WebAssembly Super Widget SDK

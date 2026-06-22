@@ -35,6 +35,19 @@ packages are available in [`samples/superwidgets`](samples/superwidgets).
 External components can be created in Rust without rebuilding TelemetryForge.
 See the complete [Super Widget SDK guide](sdk/README.md).
 
+## Remote Deck LAN
+
+While TelemetryForge is running, the full editor is also available from a
+phone or browser at the LAN address shown in the application header, using
+port `8787`. The first MVP supports editing, preview, screens, sensors,
+automation and rendering controls. File uploads remain desktop-only.
+The server can be enabled or disabled from the desktop security panel.
+
+Username/password protection can be enabled from **Remote Deck security** in
+the Windows application. Passwords are stored as Argon2 hashes. Do not expose
+port `8787` directly to the Internet; encrypted remote access will be added
+separately.
+
 ## Quick start
 
 ```powershell

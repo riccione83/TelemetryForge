@@ -58,7 +58,7 @@ For complete English setup, editor and troubleshooting documentation, see
 
 Italian documentation is available in [README.it.md](README.it.md).
 
-The development history and unreleased work are documented in
+The release history and detailed changes are documented in
 [CODE_CHANGES.md](CODE_CHANGES.md).
 
 <details>

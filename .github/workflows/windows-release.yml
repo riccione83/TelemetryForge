@@ -25,8 +25,18 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
+      - name: Read application version
+        id: version
+        shell: pwsh
+        run: |
+          $manifest = Get-Content Cargo.toml -Raw
+          if ($manifest -notmatch '(?m)^version\s*=\s*"([^"]+)"') {
+            throw "Could not read the application version from Cargo.toml"
+          }
+          "value=$($Matches[1])" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
       - name: Run tests
-        run: cargo test --lib
+        run: cargo test --workspace
 
       - name: Build release executable
         run: cargo build --release
@@ -45,20 +55,21 @@ jobs:
             target/release/TelemetryForge.exe
             target/release/TelemetryForge.exe.sha256
 
-      - name: Update continuous release
+      - name: Create versioned main build
         if: github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git tag -f continuous $env:GITHUB_SHA
-          git push origin refs/tags/continuous --force
-          gh release view continuous *> $null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create continuous --prerelease --title "Continuous Build" --notes "Latest automated Windows build from main."
-          }
-          gh release edit continuous --prerelease --title "Continuous Build" --notes "Latest automated Windows build from commit $env:GITHUB_SHA."
-          gh release upload continuous target/release/TelemetryForge.exe target/release/TelemetryForge.exe.sha256 --clobber
+          $tag = "v${{ steps.version.outputs.value }}-build.${{ github.run_number }}"
+          $shortSha = $env:GITHUB_SHA.Substring(0, 7)
+          gh release create $tag `
+            target/release/TelemetryForge.exe `
+            target/release/TelemetryForge.exe.sha256 `
+            --target $env:GITHUB_SHA `
+            --prerelease `
+            --title "TelemetryForge $tag" `
+            --notes "Automated Windows build from main commit $shortSha."
 
       - name: Create versioned release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -66,4 +77,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $expected = "v${{ steps.version.outputs.value }}"
+          if ("${{ github.ref_name }}" -ne $expected) {
+            throw "Tag ${{ github.ref_name }} does not match Cargo.toml version $expected"
+          }
           gh release create "${{ github.ref_name }}" target/release/TelemetryForge.exe target/release/TelemetryForge.exe.sha256 --generate-notes --title "TelemetryForge ${{ github.ref_name }}"

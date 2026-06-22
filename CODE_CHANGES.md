@@ -3,7 +3,7 @@
 This document tracks the most important user-facing and architectural changes
 made to TelemetryForge.
 
-## Unreleased
+## 0.2.0 — 2026-06-22
 
 ### Rust/WebAssembly Super Widget SDK
 
@@ -154,10 +154,9 @@ made to TelemetryForge.
 - VRAM percentage is now calculated from dedicated memory used divided by
   dedicated memory total, with the exact GPU Memory load sensor as fallback.
 
-## Latest changes
+### Earlier 0.2.0 changes
 
-These changes are included in the current `main` branch and continuous Windows
-release.
+These changes are included in TelemetryForge 0.2.0.
 
 ### Threshold gradients
 

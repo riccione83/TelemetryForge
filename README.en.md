@@ -209,11 +209,11 @@ The protocol was researched from
 especially its revision A driver. TelemetryForge is an independent Rust
 implementation.
 
-## Continuous downloads
+## Releases and automated builds
 
-Every push to `main` updates the **Continuous Build** prerelease with
-`TelemetryForge.exe` and its SHA-256 checksum. Version tags such as `v1.0.0`
-create stable GitHub releases.
+Version tags such as `v0.2.0` create stable GitHub releases. Every push to
+`main` also creates a separate prerelease such as `v0.2.0-build.42`, preserving
+the build history instead of replacing one continuous download.
 
 ## License
 

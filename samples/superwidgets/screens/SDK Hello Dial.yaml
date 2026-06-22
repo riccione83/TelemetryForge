@@ -1,0 +1,27 @@
+display:
+  model: Turing Smart Screen 3.5
+  port: AUTO
+  width: 480
+  height: 320
+  orientation: reverse_landscape
+  brightness: 100
+background:
+  source: colour
+  colour: '#03080e'
+theme:
+  name: SDK Hello Dial
+  foreground: '#f5faff'
+  accent: '#23d2ff'
+  panel: '#07111c'
+widgets:
+- kind: super_widget
+  superwidget_id: sdk.hello-dial
+  enabled: true
+  x: 150
+  y: 70
+  width: 180
+  height: 180
+sensor_poll_ms: 1000
+frame_interval_ms: 200
+cpu_temperature_source: core
+cpu_clock_source: average

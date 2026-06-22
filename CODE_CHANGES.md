@@ -5,6 +5,35 @@ made to TelemetryForge.
 
 ## Unreleased
 
+### Rust/WebAssembly Super Widget SDK
+
+- Added a standalone Rust SDK and an external example project.
+- Added a sandboxed Wasmi runtime with no WASI access, an 8 MB memory limit
+  and per-render instruction budget.
+- Added host APIs for sensors, text, lines, circles, filled circles and arcs.
+- Added centred text, dynamic number rendering and low-cost animation timing.
+- Added per-component animation frame limits to protect CPU usage.
+- Added `.superwidget` package installation from the Widget panel.
+- Cached compiled WebAssembly modules to keep external components efficient.
+- Added the external **Reactor Core** example: an animated CPU/GPU energy
+  reactor with orbiting scanner arcs, live load rings, temperature satellites
+  and GPU power telemetry.
+- Bundled Reactor Core and SDK Hello Dial in release builds.
+- Added ready-to-use Command Dials, Reactor Core and SDK Hello Dial screens.
+- Added standalone `.superwidget` packages and a GitHub screenshot under
+  `samples/superwidgets` and `docs/screenshots`.
+
+### Automatic screen switching
+
+- Verified that GPU threshold rules work when no default screen is selected.
+- Reduced hardware-sensor polling to one second while hardware automation
+  rules are enabled, without increasing idle polling for other configurations.
+- Evaluated rules against the newest raw sensor snapshot.
+- Kept the active automatic screen visible in the rendering status.
+- Manual screen loads now override an already-active automation condition.
+- A suppressed rule is re-armed only after its condition becomes false, so a
+  manually selected screen is not replaced again a few seconds later.
+
 ### CPU Command Dial Super Widget
 
 - Added the first Super Widget registry under
@@ -26,8 +55,18 @@ made to TelemetryForge.
 - Changed **Save as** to **Save** whenever a named screen is active.
 - Saving an active screen now updates it directly without asking for its name
   again.
+- Persisted the active screen identity across application restarts.
+- Added startup migration that identifies the matching saved screen for
+  existing installations without active-screen metadata.
 
 ### Low-CPU rendering
+
+- Replaced the single changed-pixel bounding box with tiled multi-region
+  display updates.
+- Distant animated elements now send independent small rectangles instead of
+  forcing a nearly full-frame USB transfer.
+- Optimized Reactor Core animation with static orbital tracks, short moving
+  scanner segments and a small central pulse region.
 
 - Removed continuous interpolation frames for hardware sensors; values now
   redraw once per completed sensor poll.

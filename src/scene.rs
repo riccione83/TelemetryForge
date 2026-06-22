@@ -89,6 +89,28 @@ impl RuleEngine {
             .filter(|screen| !screen.trim().is_empty())
     }
 
+    pub fn any_rule_matches(&mut self, config: &AppConfig, sensors: &SensorSnapshot) -> bool {
+        if !config.automation.enabled {
+            return false;
+        }
+        self.processes.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing(),
+        );
+        config
+            .automation
+            .rules
+            .iter()
+            .any(|rule| self.matches(rule, sensors))
+    }
+
+    pub fn reset(&mut self) {
+        self.matched_since.clear();
+        self.active_screen = None;
+        self.active_last_match = None;
+    }
+
     fn matches(&self, rule: &AutomationRule, sensors: &SensorSnapshot) -> bool {
         if !rule.enabled || rule.screen.trim().is_empty() {
             return false;
@@ -248,5 +270,54 @@ mod tests {
             transition_frame(&from, &target, TransitionKind::Fade, 1.0),
             target
         );
+    }
+
+    #[test]
+    fn gpu_rule_selects_screen_without_a_default_screen() {
+        let mut config = AppConfig::default();
+        config.automation.enabled = true;
+        config.automation.default_screen = None;
+        config.automation.rules = vec![AutomationRule {
+            enabled: true,
+            kind: AutomationRuleKind::GpuUsageAbove,
+            process_name: String::new(),
+            threshold: 80.0,
+            idle_seconds: 300,
+            sustain_seconds: 0,
+            release_seconds: 8,
+            screen: "msi".into(),
+        }];
+        let sensors = SensorSnapshot {
+            gpu_usage: Some(90.0),
+            ..Default::default()
+        };
+        assert_eq!(
+            RuleEngine::new().target_screen(&config, &sensors),
+            Some("msi".into())
+        );
+    }
+
+    #[test]
+    fn reset_requires_a_rule_to_sustain_again() {
+        let mut config = AppConfig::default();
+        config.automation.enabled = true;
+        config.automation.rules = vec![AutomationRule {
+            enabled: true,
+            kind: AutomationRuleKind::GpuUsageAbove,
+            process_name: String::new(),
+            threshold: 80.0,
+            idle_seconds: 300,
+            sustain_seconds: 10,
+            release_seconds: 8,
+            screen: "msi".into(),
+        }];
+        let sensors = SensorSnapshot {
+            gpu_usage: Some(90.0),
+            ..Default::default()
+        };
+        let mut engine = RuleEngine::new();
+        assert_eq!(engine.target_screen(&config, &sensors), None);
+        engine.reset();
+        assert_eq!(engine.target_screen(&config, &sensors), None);
     }
 }

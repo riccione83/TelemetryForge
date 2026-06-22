@@ -14,11 +14,26 @@ An open-source Windows desktop application for TURZX/Turing Smart Screen
 - Automatic screen rules with fade, slide, dissolve and glitch transitions
 - English and Italian user interfaces
 
-## Sample incluso
+## Included sample
 
-Puoi importare direttamente
-[`samples/msi-forged-core.telemetryforge`](samples/msi-forged-core.telemetryforge):
-include lo screen 480×320 **MSI Forged Core**, lo sfondo e tutti i widget.
+Import [`samples/msi-forged-core.telemetryforge`](samples/msi-forged-core.telemetryforge)
+to use the 480×320 **MSI Forged Core** screen, including its background and
+widgets.
+
+## Super Widgets
+
+Super Widgets combine multiple sensors and custom graphics into one movable
+and resizable editor object.
+
+![CPU and GPU Command Dial Super Widgets](docs/screenshots/superwidgets-command-dials.png)
+
+Release builds include **CPU Command Dial**, **GPU Command Dial**,
+**Reactor Core** and **SDK Hello Dial**. Ready-to-use screen profiles are
+installed automatically when missing. Editable profiles and standalone WASM
+packages are available in [`samples/superwidgets`](samples/superwidgets).
+
+External components can be created in Rust without rebuilding TelemetryForge.
+See the complete [Super Widget SDK guide](sdk/README.md).
 
 ## Quick start
 

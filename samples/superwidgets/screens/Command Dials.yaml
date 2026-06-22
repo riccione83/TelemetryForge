@@ -1,0 +1,36 @@
+display:
+  model: Turing Smart Screen 3.5
+  port: AUTO
+  width: 480
+  height: 320
+  orientation: reverse_landscape
+  brightness: 100
+background:
+  source: colour
+  colour: '#02050c'
+theme:
+  name: Command Dials
+  foreground: '#eef9ff'
+  accent: '#21e8ff'
+  panel: '#050b18'
+widgets:
+- kind: super_widget
+  superwidget_id: cpu-command-dial
+  enabled: true
+  x: 8
+  y: 48
+  width: 220
+  height: 220
+  superwidget_bindings:
+    temperature: cpu_core
+- kind: super_widget
+  superwidget_id: gpu-command-dial
+  enabled: true
+  x: 252
+  y: 48
+  width: 220
+  height: 220
+sensor_poll_ms: 1000
+frame_interval_ms: 150
+cpu_temperature_source: core
+cpu_clock_source: average

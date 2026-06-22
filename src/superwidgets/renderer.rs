@@ -16,6 +16,15 @@ pub fn draw(
     background_opacity: f32,
     bindings: &std::collections::HashMap<String, String>,
 ) -> Result<RgbaImage> {
+    if manifest.runtime == "wasm" {
+        let entry = manifest.entry.as_deref().unwrap_or("widget.wasm");
+        return super::wasm_runtime::render(
+            &super::component_dir(&manifest.id).join(entry),
+            width,
+            height,
+            sensors,
+        );
+    }
     let temperature = selected_temperature(manifest, sensors, bindings);
     let fan_speed = selected_fan(sensors, bindings);
     let source = match manifest.template.as_str() {
@@ -479,9 +488,13 @@ mod tests {
             name: "CPU Command Dial".into(),
             description: String::new(),
             template: "cpu_command_dial".into(),
+            runtime: "native".into(),
+            entry: None,
             width: 220,
             height: 220,
             sensors: Vec::new(),
+            abi_version: 1,
+            animated_fps: 0,
         };
         let sensors = SensorSnapshot {
             cpu_usage: Some(73.0),
@@ -511,9 +524,13 @@ mod tests {
             name: "GPU Command Dial".into(),
             description: String::new(),
             template: "gpu_command_dial".into(),
+            runtime: "native".into(),
+            entry: None,
             width: 220,
             height: 220,
             sensors: Vec::new(),
+            abi_version: 1,
+            animated_fps: 0,
         };
         let sensors = SensorSnapshot {
             gpu_usage: Some(96.0),
@@ -534,5 +551,59 @@ mod tests {
         .unwrap();
         assert_eq!(image.dimensions(), (180, 180));
         assert!(image.pixels().any(|pixel| pixel[3] > 0));
+    }
+
+    #[test]
+    #[ignore = "regenerates the README screenshot"]
+    fn generate_command_dials_readme_screenshot() {
+        let mut image = RgbaImage::from_pixel(480, 320, Rgba([2, 5, 12, 255]));
+        for y in 0..image.height() {
+            for x in 0..image.width() {
+                let cyan = ((x as f32 / image.width() as f32) * 12.0) as u8;
+                let magenta = ((y as f32 / image.height() as f32) * 10.0) as u8;
+                image.put_pixel(x, y, Rgba([2 + magenta, 5 + cyan / 2, 12 + cyan, 255]));
+            }
+        }
+        let sensors = SensorSnapshot {
+            cpu_usage: Some(68.0),
+            cpu_temperature: Some(64.0),
+            cpu_clock: Some(5175.0),
+            gpu_usage: Some(91.0),
+            gpu_temperature: Some(72.0),
+            gpu_clock: Some(2760.0),
+            fan_speed: Some(1840.0),
+            ..Default::default()
+        };
+        let cpu = cpu_command_dial(&sensors, 64.0, 1420.0).unwrap();
+        let gpu = gpu_command_dial(&sensors, 72.0, 1840.0).unwrap();
+        let cpu = imageops::resize(&cpu, 220, 220, imageops::FilterType::Lanczos3);
+        let gpu = imageops::resize(&gpu, 220, 220, imageops::FilterType::Lanczos3);
+        imageops::overlay(&mut image, &cpu, 8, 48);
+        imageops::overlay(&mut image, &gpu, 252, 48);
+
+        let font = fonts::load("Bahnschrift").unwrap();
+        draw_centred(
+            &mut image,
+            &font,
+            18.0,
+            240,
+            13,
+            "TELEMETRYFORGE  /  COMMAND DIALS",
+            Rgba([220, 244, 255, 255]),
+        );
+        draw_centred(
+            &mut image,
+            &font,
+            11.0,
+            240,
+            285,
+            "RESIZABLE MULTI-SENSOR SUPER WIDGETS",
+            Rgba([82, 203, 255, 255]),
+        );
+
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("docs/screenshots/superwidgets-command-dials.png");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        image.save(path).unwrap();
     }
 }

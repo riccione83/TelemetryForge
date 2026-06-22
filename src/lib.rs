@@ -24,6 +24,7 @@ pub fn run() {
         .manage(AppState::load())
         .invoke_handler(tauri::generate_handler![
             ui::get_config,
+            ui::get_active_screen,
             ui::save_config,
             ui::list_screens,
             ui::save_screen,
@@ -39,6 +40,7 @@ pub fn run() {
             ui::select_background_folder,
             ui::select_gif,
             ui::list_superwidgets,
+            ui::import_superwidget,
             ui::list_displays,
             ui::start_rendering,
             ui::stop_rendering,

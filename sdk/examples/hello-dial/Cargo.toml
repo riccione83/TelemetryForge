@@ -1,0 +1,13 @@
+[package]
+name = "telemetryforge-hello-dial"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+telemetryforge-superwidget-sdk = { path = "../../telemetryforge-superwidget-sdk" }

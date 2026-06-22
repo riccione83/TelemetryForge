@@ -38,6 +38,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
 tracing = "0.1"
 zip = "2"
+wasmi = "0.51"
 windows = { version = "0.61", features = [
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
@@ -45,3 +46,11 @@ windows = { version = "0.61", features = [
     "Win32_System_SystemInformation",
     "Win32_UI_Input_KeyboardAndMouse",
 ] }
+
+[workspace]
+members = [
+    "sdk/telemetryforge-superwidget-sdk",
+    "sdk/telemetryforge-superwidget-cli",
+    "sdk/examples/hello-dial",
+    "sdk/examples/reactor-core",
+]

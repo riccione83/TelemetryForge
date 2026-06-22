@@ -1,0 +1,6 @@
+[package]
+name = "telemetryforge-superwidget-sdk"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Rust SDK for TelemetryForge WebAssembly Super Widgets"

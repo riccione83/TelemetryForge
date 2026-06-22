@@ -17,6 +17,7 @@ pub struct AppState {
     pub worker: Mutex<Option<RenderWorker>>,
     pub status: Arc<RwLock<String>>,
     pub scene_revision: Arc<AtomicU64>,
+    pub active_screen: Arc<RwLock<Option<String>>>,
 }
 
 impl AppState {
@@ -32,6 +33,11 @@ impl AppState {
                 AppConfig::default()
             }
         };
+        let active_screen = persistence::load_active_screen(&config_path)
+            .or_else(|| persistence::infer_active_screen(&config_path, &config));
+        if let Some(name) = active_screen.as_deref() {
+            let _ = persistence::save_active_screen(&config_path, Some(name));
+        }
         Self {
             config_path,
             config: Arc::new(RwLock::new(config)),
@@ -39,6 +45,7 @@ impl AppState {
             worker: Mutex::new(None),
             status: Arc::new(RwLock::new("Stopped".into())),
             scene_revision: Arc::new(AtomicU64::new(0)),
+            active_screen: Arc::new(RwLock::new(active_screen)),
         }
     }
 }

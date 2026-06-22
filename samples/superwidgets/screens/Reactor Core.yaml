@@ -1,0 +1,27 @@
+display:
+  model: Turing Smart Screen 3.5
+  port: AUTO
+  width: 480
+  height: 320
+  orientation: reverse_landscape
+  brightness: 100
+background:
+  source: colour
+  colour: '#02050c'
+theme:
+  name: Reactor Core
+  foreground: '#eef9ff'
+  accent: '#21e8ff'
+  panel: '#050b18'
+widgets:
+- kind: super_widget
+  superwidget_id: sdk.reactor-core
+  enabled: true
+  x: 90
+  y: 10
+  width: 300
+  height: 300
+sensor_poll_ms: 500
+frame_interval_ms: 100
+cpu_temperature_source: core
+cpu_clock_source: average

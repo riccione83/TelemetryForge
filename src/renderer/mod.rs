@@ -36,6 +36,16 @@ pub fn visual_signature(config: &AppConfig, sensors: &SensorSnapshot) -> u64 {
             continue;
         }
         if widget.kind == WidgetKind::SuperWidget {
+            if let Some(fps) = widget
+                .superwidget_id
+                .as_deref()
+                .and_then(crate::superwidgets::find)
+                .map(|manifest| manifest.animated_fps)
+                .filter(|fps| *fps > 0)
+            {
+                let frame_duration = (1000 / fps.clamp(1, 30) as u128).max(1);
+                (ANIMATION_START.elapsed().as_millis() / frame_duration).hash(&mut hasher);
+            }
             for value in [
                 sensors.cpu_usage,
                 sensors.cpu_temperature,
@@ -44,6 +54,9 @@ pub fn visual_signature(config: &AppConfig, sensors: &SensorSnapshot) -> u64 {
                 sensors.gpu_temperature,
                 sensors.gpu_clock,
                 sensors.fan_speed,
+                sensors.gpu_power,
+                sensors.ram_usage,
+                sensors.vram_usage,
             ] {
                 value.map(|value| value.round() as i64).hash(&mut hasher);
             }

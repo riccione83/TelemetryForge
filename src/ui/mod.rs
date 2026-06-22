@@ -1,6 +1,9 @@
 use crate::{
     app_state::{AppState, RenderWorker},
-    config::{persistence, schema::AppConfig},
+    config::{
+        persistence,
+        schema::{AppConfig, AutomationRuleKind},
+    },
     display_driver, package, renderer, scene,
     sensors::poller,
     windows_startup,
@@ -41,6 +44,17 @@ pub fn get_config(state: State<AppState>) -> AppConfig {
 }
 
 #[tauri::command]
+pub fn get_active_screen(state: State<AppState>) -> Option<String> {
+    state.active_screen.read().clone()
+}
+
+fn set_active_screen(state: &AppState, name: Option<&str>) -> Result<(), String> {
+    persistence::save_active_screen(&state.config_path, name).map_err(|error| error.to_string())?;
+    *state.active_screen.write() = name.map(str::to_string);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn save_config(state: State<AppState>, config: AppConfig) -> Result<(), String> {
     persistence::save(&state.config_path, &config).map_err(|e| e.to_string())?;
     *state.config.write() = config;
@@ -61,6 +75,7 @@ pub fn save_screen(state: State<AppState>, name: String, config: AppConfig) -> R
     persistence::save(&path, &config).map_err(|e| e.to_string())?;
     persistence::save(&state.config_path, &config).map_err(|e| e.to_string())?;
     *state.config.write() = config;
+    set_active_screen(&state, Some(&name))?;
     Ok(())
 }
 
@@ -71,6 +86,7 @@ pub fn load_screen(state: State<AppState>, name: String) -> Result<AppConfig, St
     let config = merge_screen_settings(loaded, &state.config.read());
     persistence::save(&state.config_path, &config).map_err(|e| e.to_string())?;
     *state.config.write() = config.clone();
+    set_active_screen(&state, Some(&name))?;
     state.scene_revision.fetch_add(1, Ordering::Relaxed);
     Ok(config)
 }
@@ -96,6 +112,7 @@ pub fn new_screen(state: State<AppState>, name: String) -> Result<AppConfig, Str
     persistence::save(&path, &config).map_err(|e| e.to_string())?;
     persistence::save(&state.config_path, &config).map_err(|e| e.to_string())?;
     *state.config.write() = config.clone();
+    set_active_screen(&state, Some(&name))?;
     state.scene_revision.fetch_add(1, Ordering::Relaxed);
     Ok(config)
 }
@@ -105,6 +122,9 @@ pub fn delete_screen(state: State<AppState>, name: String) -> Result<(), String>
     let path = persistence::profile_path(&state.config_path, &name).map_err(|e| e.to_string())?;
     if path.exists() {
         std::fs::remove_file(path).map_err(|e| e.to_string())?;
+    }
+    if state.active_screen.read().as_deref() == Some(name.as_str()) {
+        set_active_screen(&state, None)?;
     }
     Ok(())
 }
@@ -149,6 +169,7 @@ pub async fn import_package(
     let config = package::import(&path, name).map_err(|error| error.to_string())?;
     persistence::save(&state.config_path, &config).map_err(|error| error.to_string())?;
     *state.config.write() = config.clone();
+    set_active_screen(&state, None)?;
     state.scene_revision.fetch_add(1, Ordering::Relaxed);
     Ok(Some(config))
 }
@@ -220,6 +241,24 @@ pub fn list_superwidgets() -> Result<Vec<crate::superwidgets::Manifest>, String>
 }
 
 #[tauri::command]
+pub async fn import_superwidget(
+    app: tauri::AppHandle,
+) -> Result<Option<crate::superwidgets::Manifest>, String> {
+    let Some(path) = app
+        .dialog()
+        .file()
+        .add_filter("TelemetryForge Super Widget", &["superwidget"])
+        .blocking_pick_file()
+        .and_then(|path| path.as_path().map(std::path::Path::to_path_buf))
+    else {
+        return Ok(None);
+    };
+    crate::superwidgets::install(&path)
+        .map(Some)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn render_once(state: State<AppState>) -> Result<(), String> {
     let config = state.config.read().clone();
     let snapshot = poller::read_snapshot(
@@ -284,6 +323,7 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
     let sensors = state.sensors.clone();
     let status = state.status.clone();
     let scene_revision = state.scene_revision.clone();
+    let active_screen_state = state.active_screen.clone();
     let config_path = state.config_path.clone();
     thread::Builder::new()
         .name("telemetryforge-renderer".into())
@@ -312,8 +352,15 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
             let mut last_rule_check = Instant::now() - Duration::from_secs(2);
             let mut active_rule_screen: Option<String> = None;
             let mut active_rule_revision = observed_scene_revision;
+            let mut manual_automation_override = false;
             while !thread_stop.load(Ordering::Relaxed) {
                 let mut current = config.read().clone();
+                sensor_poller.set_hardware_refresh_interval(if hardware_automation_enabled(&current)
+                {
+                    Duration::from_secs(1)
+                } else {
+                    Duration::from_secs(2)
+                });
                 if volume_widget_enabled(&current)
                     && last_volume_poll.elapsed() >= Duration::from_millis(100)
                 {
@@ -341,8 +388,20 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
                     if current_revision != active_rule_revision {
                         active_rule_screen = None;
                         active_rule_revision = current_revision;
+                        manual_automation_override = true;
+                        rule_engine.reset();
                     }
-                    let requested = rule_engine.target_screen(&current, &displayed);
+                    let requested = if manual_automation_override {
+                        if rule_engine.any_rule_matches(&current, &target) {
+                            None
+                        } else {
+                            manual_automation_override = false;
+                            rule_engine.reset();
+                            None
+                        }
+                    } else {
+                        rule_engine.target_screen(&current, &target)
+                    };
                     if requested != active_rule_screen {
                         if let Some(name) = requested.as_deref() {
                             if let Ok(path) = persistence::profile_path(&config_path, name) {
@@ -358,6 +417,18 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
                                             active_rule_revision =
                                                 scene_revision.fetch_add(1, Ordering::Relaxed) + 1;
                                             active_rule_screen = requested.clone();
+                                            if let Err(error) = persistence::save_active_screen(
+                                                &config_path,
+                                                Some(name),
+                                            ) {
+                                                tracing::error!(
+                                                    %error,
+                                                    "could not persist active automatic screen"
+                                                );
+                                            } else {
+                                                *active_screen_state.write() =
+                                                    Some(name.to_string());
+                                            }
                                             *status.write() =
                                                 format!("Automatic screen: {name}");
                                         }
@@ -432,7 +503,10 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
                     send_result
                 });
                 *status.write() = match result {
-                    Ok(()) => "Rendering active".into(),
+                    Ok(()) => active_rule_screen
+                        .as_deref()
+                        .map(|screen| format!("Rendering active · Automatic screen: {screen}"))
+                        .unwrap_or_else(|| "Rendering active".into()),
                     Err(error) => format!("Error: {error:#}"),
                 };
                 thread::sleep(renderer_sleep_interval(&current, transition.is_some()));
@@ -442,6 +516,19 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     *worker = Some(RenderWorker { stop });
     Ok(())
+}
+
+fn hardware_automation_enabled(config: &AppConfig) -> bool {
+    config.automation.enabled
+        && config.automation.rules.iter().any(|rule| {
+            rule.enabled
+                && matches!(
+                    rule.kind,
+                    AutomationRuleKind::GpuTemperatureAbove
+                        | AutomationRuleKind::CpuTemperatureAbove
+                        | AutomationRuleKind::GpuUsageAbove
+                )
+        })
 }
 
 fn update_displayed_snapshot(
@@ -623,6 +710,35 @@ fn send_changed_region(
     let Some(previous) = previous.filter(|image| image.dimensions() == current.dimensions()) else {
         return session.send_region(current, 0, 0);
     };
+    let regions = dirty_regions(previous, current);
+    if regions.is_empty() {
+        return Ok(());
+    }
+    for region in regions {
+        let image =
+            image::imageops::crop_imm(current, region.x, region.y, region.width, region.height)
+                .to_image();
+        session.send_region(&image, region.x as u16, region.y as u16)?;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DirtyRegion {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+fn dirty_regions(previous: &RgbImage, current: &RgbImage) -> Vec<DirtyRegion> {
+    const TILE_WIDTH: u32 = 16;
+    const TILE_HEIGHT: u32 = 16;
+    const MAX_REGIONS: usize = 24;
+
+    let tiles_x = current.width().div_ceil(TILE_WIDTH);
+    let tiles_y = current.height().div_ceil(TILE_HEIGHT);
+    let mut dirty = vec![false; (tiles_x * tiles_y) as usize];
     let mut min_x = current.width();
     let mut min_y = current.height();
     let mut max_x = 0;
@@ -631,24 +747,69 @@ fn send_changed_region(
     for y in 0..current.height() {
         for x in 0..current.width() {
             if current.get_pixel(x, y) != previous.get_pixel(x, y) {
-                changed = true;
+                dirty[((y / TILE_HEIGHT) * tiles_x + x / TILE_WIDTH) as usize] = true;
                 min_x = min_x.min(x);
                 min_y = min_y.min(y);
                 max_x = max_x.max(x);
                 max_y = max_y.max(y);
+                changed = true;
             }
         }
     }
     if !changed {
-        return Ok(());
+        return Vec::new();
     }
-    let width = max_x - min_x + 1;
-    let height = max_y - min_y + 1;
-    if width * height > current.width() * current.height() * 3 / 4 {
-        session.send_region(current, 0, 0)
+
+    let bounding = DirtyRegion {
+        x: min_x,
+        y: min_y,
+        width: max_x - min_x + 1,
+        height: max_y - min_y + 1,
+    };
+    let mut regions: Vec<DirtyRegion> = Vec::new();
+    for tile_y in 0..tiles_y {
+        let mut tile_x = 0;
+        while tile_x < tiles_x {
+            if !dirty[(tile_y * tiles_x + tile_x) as usize] {
+                tile_x += 1;
+                continue;
+            }
+            let start = tile_x;
+            while tile_x + 1 < tiles_x && dirty[(tile_y * tiles_x + tile_x + 1) as usize] {
+                tile_x += 1;
+            }
+            let x = start * TILE_WIDTH;
+            let width = ((tile_x + 1) * TILE_WIDTH).min(current.width()) - x;
+            if let Some(previous_row) = regions.iter_mut().rev().find(|region| {
+                region.x == x
+                    && region.width == width
+                    && region.y + region.height == tile_y * TILE_HEIGHT
+            }) {
+                previous_row.height =
+                    ((tile_y + 1) * TILE_HEIGHT).min(current.height()) - previous_row.y;
+            } else {
+                regions.push(DirtyRegion {
+                    x,
+                    y: tile_y * TILE_HEIGHT,
+                    width,
+                    height: ((tile_y + 1) * TILE_HEIGHT).min(current.height())
+                        - tile_y * TILE_HEIGHT,
+                });
+            }
+            tile_x += 1;
+        }
+    }
+
+    let tiled_pixels: u32 = regions
+        .iter()
+        .map(|region| region.width * region.height)
+        .sum();
+    let bounding_pixels = bounding.width * bounding.height;
+    let command_overhead = regions.len() as u32 * 32;
+    if regions.len() > MAX_REGIONS || tiled_pixels + command_overhead >= bounding_pixels {
+        vec![bounding]
     } else {
-        let region = image::imageops::crop_imm(current, min_x, min_y, width, height).to_image();
-        session.send_region(&region, min_x as u16, min_y as u16)
+        regions
     }
 }
 
@@ -675,4 +836,45 @@ pub fn get_autostart() -> Result<bool, String> {
 #[tauri::command]
 pub fn set_autostart(enabled: bool) -> Result<(), String> {
     windows_startup::set_enabled(enabled).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::Rgb;
+
+    #[test]
+    fn scattered_changes_are_sent_as_separate_regions() {
+        let previous = RgbImage::from_pixel(480, 320, Rgb([0, 0, 0]));
+        let mut current = previous.clone();
+        current.put_pixel(20, 20, Rgb([255, 255, 255]));
+        current.put_pixel(450, 290, Rgb([255, 255, 255]));
+
+        let regions = dirty_regions(&previous, &current);
+
+        assert_eq!(regions.len(), 2);
+        assert!(
+            regions
+                .iter()
+                .map(|region| region.width * region.height)
+                .sum::<u32>()
+                < 1024
+        );
+    }
+
+    #[test]
+    fn dense_changes_use_one_region() {
+        let previous = RgbImage::from_pixel(64, 64, Rgb([0, 0, 0]));
+        let current = RgbImage::from_pixel(64, 64, Rgb([255, 255, 255]));
+
+        assert_eq!(
+            dirty_regions(&previous, &current),
+            vec![DirtyRegion {
+                x: 0,
+                y: 0,
+                width: 64,
+                height: 64,
+            }]
+        );
+    }
 }

@@ -64,6 +64,7 @@ function refreshTranslatedUi() {
 
 async function boot() {
   config = await invoke("get_config");
+  currentScreen = await invoke("get_active_screen").catch(() => "") || "";
   collapseAllWidgets();
   refreshTranslatedUi();
   bindConfig();
@@ -844,6 +845,15 @@ $("add-rule").onclick=()=>{
 $("fullscreen-preview").onclick=()=>setPreviewFullscreen(!previewFullscreen);
 $("collapse-widgets").onclick=()=>{collapseAllWidgets();renderWidgets();};
 $("expand-widgets").onclick=()=>{expandAllWidgets();renderWidgets();};
+$("import-superwidget").onclick=async()=>{
+  try{
+    const installed=await invoke("import_superwidget");
+    if(!installed)return;
+    await loadSuperWidgets();
+    $("new-widget-kind").value=`super:${installed.id}`;
+    $("status").textContent=t("superWidgetInstalled",{name:installed.name});
+  }catch(error){$("error").textContent=String(error);}
+};
 $("add-widget").onclick=()=>{
   const selection=$("new-widget-kind").value;
   if(selection.startsWith("super:")){
@@ -868,7 +878,24 @@ $("save-screen").onclick=async()=>{
     $("status").textContent=t("screenSaved",{name});
   }catch(e){$("error").textContent=String(e);}
 };
-$("load-screen").onclick=async()=>{const name=$("screen-list").value;if(!name)return;config=await invoke("load_screen",{name});currentScreen=name;selectedWidget=-1;selectedWidgets.clear();collapseAllWidgets();bindConfig();await refreshPreview();};
+$("load-screen").onclick=async()=>{
+  const name=$("screen-list").value;
+  if(!name)return;
+  try{
+    $("error").textContent="";
+    config=await invoke("load_screen",{name});
+    currentScreen=name;
+    selectedWidget=-1;
+    selectedWidgets.clear();
+    collapseAllWidgets();
+    bindConfig();
+    await loadScreens(name);
+    await refreshPreview();
+    $("status").textContent=t("screenLoaded",{name});
+  }catch(error){
+    $("error").textContent=String(error);
+  }
+};
 $("delete-screen").onclick=async()=>{const name=$("screen-list").value;if(!name||!confirm(t("deleteConfirm",{name})))return;await invoke("delete_screen",{name});if(currentScreen===name)currentScreen="";await loadScreens();};
 $("export-package").onclick=async()=>{try{readForm();await invoke("export_package",{config});}catch(e){$("error").textContent=String(e);}};
 $("import-package").onclick=async()=>{try{const imported=await invoke("import_package");if(!imported)return;config=imported;currentScreen="";collapseAllWidgets();bindConfig();await refreshPreview();}catch(e){$("error").textContent=String(e);}};

@@ -1,0 +1,11 @@
+id: sdk.hello-dial
+name: SDK Hello Dial
+description: Minimal external Rust/WASM Super Widget example.
+runtime: wasm
+abi_version: 1
+entry: widget.wasm
+width: 180
+height: 180
+sensors:
+  - cpu_usage
+  - cpu_temperature

@@ -5,7 +5,7 @@ use super::{
 use crate::config::schema::{CpuClockSource, CpuTemperatureSource};
 use std::{
     path::{Path, PathBuf},
-    time::Instant,
+    time::{Duration, Instant},
 };
 use sysinfo::{CpuRefreshKind, Disks, MemoryRefreshKind, Networks, RefreshKind, System};
 
@@ -18,6 +18,7 @@ pub struct SensorPoller {
     hardware_snapshot: SensorSnapshot,
     last_network_refresh: Instant,
     last_hardware_refresh: Option<Instant>,
+    hardware_refresh_interval: Duration,
     volume_reader: VolumeReader,
 }
 
@@ -41,8 +42,13 @@ impl SensorPoller {
             hardware_snapshot: SensorSnapshot::default(),
             last_network_refresh: Instant::now(),
             last_hardware_refresh: None,
+            hardware_refresh_interval: Duration::from_secs(2),
             volume_reader: VolumeReader::new(),
         }
+    }
+
+    pub fn set_hardware_refresh_interval(&mut self, interval: Duration) {
+        self.hardware_refresh_interval = interval.max(Duration::from_millis(250));
     }
 
     pub fn read(
@@ -86,7 +92,7 @@ impl SensorPoller {
 
         let hardware_due = self
             .last_hardware_refresh
-            .is_none_or(|last| last.elapsed() >= std::time::Duration::from_secs(2));
+            .is_none_or(|last| last.elapsed() >= self.hardware_refresh_interval);
         if hardware_due {
             self.refresh_hardware(lhm_dll);
             self.last_hardware_refresh = Some(Instant::now());

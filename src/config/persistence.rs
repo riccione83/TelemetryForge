@@ -9,6 +9,50 @@ pub fn default_config_path() -> PathBuf {
     data_dir().join("config.yaml")
 }
 
+pub fn active_screen_path(config_path: &Path) -> PathBuf {
+    config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("active-screen.txt")
+}
+
+pub fn load_active_screen(config_path: &Path) -> Option<String> {
+    let name = fs::read_to_string(active_screen_path(config_path)).ok()?;
+    let name = name.trim();
+    (!name.is_empty() && profile_path(config_path, name).ok()?.is_file()).then(|| name.to_string())
+}
+
+pub fn infer_active_screen(config_path: &Path, current: &AppConfig) -> Option<String> {
+    list_profiles(config_path).ok()?.into_iter().find(|name| {
+        let Ok(path) = profile_path(config_path, name) else {
+            return false;
+        };
+        let Ok(mut profile) = load_or_create(&path) else {
+            return false;
+        };
+        profile.automation = current.automation.clone();
+        profile.transition = current.transition.clone();
+        profile.libre_hardware_monitor_dll = current.libre_hardware_monitor_dll.clone();
+        profile.cpu_temperature_source = current.cpu_temperature_source;
+        profile.cpu_clock_source = current.cpu_clock_source;
+        profile.fan_sensor = current.fan_sensor.clone();
+        profile == *current
+    })
+}
+
+pub fn save_active_screen(config_path: &Path, name: Option<&str>) -> Result<()> {
+    let path = active_screen_path(config_path);
+    if let Some(name) = name.filter(|name| !name.trim().is_empty()) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, name.trim())?;
+    } else if path.exists() {
+        fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
 pub fn data_dir() -> PathBuf {
     std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
@@ -124,4 +168,43 @@ pub fn list_profiles(config_path: &Path) -> Result<Vec<String>> {
         .collect::<Vec<_>>();
     names.sort_by_key(|name| name.to_lowercase());
     Ok(names)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn infers_the_active_screen_from_the_saved_config() {
+        let root = std::env::temp_dir().join(format!(
+            "telemetryforge-active-screen-{}",
+            std::process::id()
+        ));
+        let config_path = root.join("config.yaml");
+        let profile = AppConfig::default();
+        let profile_path = profile_path(&config_path, "My Screen").unwrap();
+        save(&profile_path, &profile).unwrap();
+        save(&config_path, &profile).unwrap();
+
+        assert_eq!(
+            infer_active_screen(&config_path, &profile),
+            Some("My Screen".into())
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn loads_the_installed_reactor_core_demo() {
+        let path = data_dir().join("screens").join("Reactor Core Demo.yaml");
+        if !path.is_file() {
+            return;
+        }
+        let loaded = load_or_create(&path).unwrap();
+        assert_eq!(loaded.theme.name, "Reactor Core");
+        assert_eq!(
+            loaded.widgets[0].superwidget_id.as_deref(),
+            Some("sdk.reactor-core")
+        );
+    }
 }

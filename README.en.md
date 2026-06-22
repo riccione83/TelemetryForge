@@ -118,14 +118,38 @@ from the Screen panel. Its editable source files are in
 ## Super Widgets
 
 Super Widgets combine multiple sensors and custom graphics into one movable
-and resizable editor object. The first bundled component is **CPU Command
-Dial**, containing CPU frequency, temperature, utilisation and fan speed.
+and resizable editor object.
+
+![CPU and GPU Command Dial Super Widgets](docs/screenshots/superwidgets-command-dials.png)
+
+Release builds include:
+
+- **CPU Command Dial**
+- **GPU Command Dial**
+- **Reactor Core**
+- **SDK Hello Dial**
+
+Ready-to-use screen profiles are installed automatically when missing. Their
+editable sources and standalone WASM packages are available in
+[`samples/superwidgets`](samples/superwidgets).
+
+The Command Dials combine frequency, temperature, utilisation and fan speed.
 Component manifests are installed under
 `%LOCALAPPDATA%\TelemetryForge\superwidgets`.
 
 Super Widgets appear in the normal Widget picker. Each instance can choose its
 own background colour/alpha and supported sensor bindings, such as CPU
 Core/Socket temperature or a specific fan source.
+
+External components can be written in Rust using the sandboxed WebAssembly
+SDK in [`sdk`](sdk). They are distributed as `.superwidget` packages and
+installed through **Import component**, without rebuilding TelemetryForge.
+The SDK examples include **Reactor Core**, an animated dual-system telemetry
+reactor built entirely as an external component. It demonstrates sensor-driven
+arcs, independent gauges, dynamic values and low-cost 10 FPS animation.
+See the complete [Super Widget SDK guide](sdk/README.md) for project structure,
+the manifest format, available sensors and drawing APIs, animation guidance,
+packaging and current ABI limitations.
 
 The **System volume** widget reads the Windows default playback-device volume.
 It can be displayed as text, a bar, a circle or a historical graph without
@@ -157,9 +181,9 @@ filename and selected automatically.
 
 ## Rendering engine
 
-Sensor values are interpolated for smooth animations. TelemetryForge keeps the
-COM port open during continuous rendering and sends only the smallest changed
-rectangle when that is more efficient than a full-frame refresh.
+TelemetryForge keeps the COM port open during continuous rendering and sends
+only changed display regions. Distant animated elements are divided into
+independent small rectangles instead of forcing a large bounding-box update.
 
 ## Troubleshooting
 

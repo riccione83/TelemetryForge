@@ -1,0 +1,18 @@
+id: sdk.reactor-core
+name: Reactor Core
+description: An animated dual-system energy reactor driven by live CPU and GPU telemetry.
+runtime: wasm
+abi_version: 1
+entry: widget.wasm
+width: 300
+height: 300
+animated_fps: 10
+sensors:
+  - cpu_usage
+  - cpu_temperature
+  - cpu_clock
+  - gpu_usage
+  - gpu_temperature
+  - gpu_clock
+  - gpu_power
+  - ram_usage

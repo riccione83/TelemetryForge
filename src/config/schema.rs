@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -161,6 +162,10 @@ pub struct WidgetConfig {
     pub gif_fps: u16,
     pub gif_loop: bool,
     pub gif_fit: BackgroundMode,
+    pub superwidget_id: Option<String>,
+    pub superwidget_background_colour: String,
+    pub superwidget_background_opacity: f32,
+    pub superwidget_bindings: HashMap<String, String>,
     pub glow: u8,
     pub shadow: u8,
     pub use_thresholds: bool,
@@ -197,6 +202,7 @@ pub enum WidgetKind {
     Text,
     Gif,
     Volume,
+    SuperWidget,
 }
 
 #[derive(Debug, Clone, Copy, Hash, Serialize, Deserialize, PartialEq, Eq)]
@@ -344,6 +350,10 @@ impl WidgetConfig {
             gif_fps: 8,
             gif_loop: true,
             gif_fit: BackgroundMode::Contain,
+            superwidget_id: None,
+            superwidget_background_colour: "#000000".into(),
+            superwidget_background_opacity: 0.0,
+            superwidget_bindings: HashMap::new(),
             glow: 0,
             shadow: 0,
             use_thresholds: false,

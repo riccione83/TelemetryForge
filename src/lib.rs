@@ -5,6 +5,7 @@ mod package;
 mod renderer;
 mod scene;
 mod sensors;
+mod superwidgets;
 mod ui;
 mod windows_startup;
 
@@ -37,6 +38,7 @@ pub fn run() {
             ui::select_background,
             ui::select_background_folder,
             ui::select_gif,
+            ui::list_superwidgets,
             ui::list_displays,
             ui::start_rendering,
             ui::stop_rendering,

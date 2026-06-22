@@ -215,6 +215,11 @@ pub fn list_displays() -> Result<Vec<display_driver::detection::DisplayPort>, St
 }
 
 #[tauri::command]
+pub fn list_superwidgets() -> Result<Vec<crate::superwidgets::Manifest>, String> {
+    crate::superwidgets::list().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn render_once(state: State<AppState>) -> Result<(), String> {
     let config = state.config.read().clone();
     let snapshot = poller::read_snapshot(

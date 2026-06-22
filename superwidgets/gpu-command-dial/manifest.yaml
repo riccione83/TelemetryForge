@@ -1,0 +1,11 @@
+id: gpu-command-dial
+name: GPU Command Dial
+description: Radial GPU clock, temperature, fan and utilisation dashboard.
+template: gpu_command_dial
+width: 220
+height: 220
+sensors:
+  - gpu_clock
+  - gpu_temperature
+  - gpu_usage
+  - fan_speed

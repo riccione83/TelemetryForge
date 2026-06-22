@@ -1,0 +1,11 @@
+id: cpu-command-dial
+name: CPU Command Dial
+description: Radial CPU clock, temperature, fan and utilisation dashboard.
+template: cpu_command_dial
+width: 220
+height: 220
+sensors:
+  - cpu_clock
+  - cpu_temperature
+  - cpu_usage
+  - fan_speed

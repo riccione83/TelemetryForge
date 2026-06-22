@@ -16,13 +16,15 @@ let previewRefreshPending = false;
 let autostartEnabled = false;
 let gifPreviewBusy = false;
 let availableScreens = [];
+let availableSuperWidgets = [];
+let availableFanSensors = [];
 
 const nameKeys = {
   cpu_temperature:"widgetCpuTemp",cpu_usage:"widgetCpuUsage",cpu_clock:"widgetCpuClock",gpu_temperature:"widgetGpuTemp",
   gpu_usage:"widgetGpuUsage",gpu_clock:"widgetGpuClock",gpu_power:"widgetGpuPower",ram_usage:"widgetRam",vram_usage:"widgetVram",
   disk_usage:"widgetDisk",network_upload:"widgetUpload",network_download:"widgetDownload",
   fan_speed:"widgetFan",clock:"widgetClock",date:"widgetDate",fps:"widgetFps",text:"widgetText",gif:"widgetGif",
-  volume:"widgetVolume"
+  volume:"widgetVolume",super_widget:"widgetSuperWidget"
 };
 const widgetName = kind => t(nameKeys[kind] || kind);
 const defaults = {
@@ -31,7 +33,7 @@ const defaults = {
   gpu_clock: "{value}", gpu_power: "{value}", ram_usage: "{value}", vram_usage: "{value}",
   disk_usage: "{value}", network_upload: "{value}", network_download: "{value}",
   fan_speed: "{value}", clock: "{value}", date: "{value}", fps: "{value}",
-  text: "Testo libero", gif: "", volume: "{value}"
+  text: "Testo libero", gif: "", volume: "{value}", super_widget: ""
 };
 const defaultAffixes = {
   cpu_temperature: {left:"CPU ", right:" °C"},
@@ -49,9 +51,9 @@ function refreshTranslatedUi() {
   if ($("fullscreen-preview")) {
     $("fullscreen-preview").textContent = t(previewFullscreen ? "exitFullscreen" : "fullscreenPreview");
   }
+  updateScreenSaveButton();
   updateRenderButton();
-  $("new-widget-kind").innerHTML = Object.keys(nameKeys)
-    .map(kind => `<option value="${kind}">${widgetName(kind)}</option>`).join("");
+  rebuildWidgetPicker();
   if (config) {
     renderWidgets();
     renderOverlay();
@@ -68,11 +70,32 @@ async function boot() {
   autostartEnabled = await invoke("get_autostart").catch(() => false);
   $("autostart").checked = autostartEnabled;
   await Promise.all([loadPorts(), loadScreens()]);
+  await loadSuperWidgets();
   await loadFanSensors();
   await refreshPreview();
   await refreshStatus();
   setInterval(refreshStatus, 1200);
   setInterval(refreshGifPreview, 200);
+}
+
+async function loadSuperWidgets() {
+  availableSuperWidgets = await invoke("list_superwidgets").catch(() => []);
+  rebuildWidgetPicker();
+  if (config) renderWidgets();
+}
+
+function rebuildWidgetPicker() {
+  const picker = $("new-widget-kind");
+  if (!picker) return;
+  picker.innerHTML =
+    `<optgroup label="${t("widgets")}">` +
+    Object.keys(nameKeys).filter(kind => kind !== "super_widget")
+      .map(kind => `<option value="${kind}">${widgetName(kind)}</option>`).join("") +
+    `</optgroup>` +
+    `<optgroup label="${t("superWidgets")}">` +
+    availableSuperWidgets.map(item =>
+      `<option value="super:${esc(item.id)}">${esc(item.name)}</option>`).join("") +
+    `</optgroup>`;
 }
 
 function bindConfig() {
@@ -119,6 +142,7 @@ async function loadScreens(selected = currentScreen) {
     screens.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
   if (screens.includes(selected)) $("screen-list").value = selected;
   $("screen-state").textContent = currentScreen || t("screenCurrent");
+  updateScreenSaveButton();
   for (const slot of ["gaming","minimal","idle"]) {
     const select = $(`quick-${slot}`);
     const assigned = localStorage.getItem(`telemetryforge-quick-${slot}`) || "";
@@ -130,6 +154,13 @@ async function loadScreens(selected = currentScreen) {
   }
   populateAutomationScreens();
   renderRules();
+}
+
+function updateScreenSaveButton() {
+  const button = $("save-screen");
+  if (!button) return;
+  button.textContent = t(currentScreen ? "save" : "saveAs");
+  button.title = t(currentScreen ? "saveCurrentScreen" : "saveAsNewScreen");
 }
 
 function screenOptions(selected = "", includeEmpty = true) {
@@ -199,6 +230,7 @@ function renderRules() {
 async function loadFanSensors(snapshot) {
   snapshot ||= await invoke("test_sensors").catch(() => null);
   const sensors = snapshot?.fan_sensors || [];
+  availableFanSensors = sensors;
   $("fanSensor").innerHTML = `<option value="">${t("automatic")}</option>` +
     sensors.map(sensor => `<option value="${esc(sensor.id)}">${esc(sensor.name)} — ${Math.round(sensor.value)} RPM</option>`).join("");
   $("fanSensor").value = config.fan_sensor || "";
@@ -210,26 +242,45 @@ function renderWidgets() {
       <div class="widget-title">
         <div class="widget-heading" data-collapse="${i}" title="${collapsedWidgets.has(i) ? t("expand") : t("collapse")}">
           <button class="collapse-widget" type="button" aria-label="${collapsedWidgets.has(i) ? t("expand") : t("collapse")}"></button>
-          <label class="toggle"><input data-i="${i}" data-k="enabled" type="checkbox" ${w.enabled ? "checked" : ""}><strong>${esc(widgetName(w.kind))} · ${modeName(w.render_mode || "text")}</strong></label>
+          <label class="toggle"><input data-i="${i}" data-k="enabled" type="checkbox" ${w.enabled ? "checked" : ""}><strong>${esc(w.kind === "super_widget" ? superWidgetName(w.superwidget_id) : `${widgetName(w.kind)} · ${modeName(w.render_mode || "text")}`)}</strong></label>
         </div>
         <div class="actions widget-actions">
-          <button class="secondary compact" data-add-bar="${i}">${t("addBar")}</button>
-          <button class="secondary compact" data-add-circle="${i}">${t("addCircle")}</button>
-          <button class="secondary compact" data-add-graph="${i}">${t("addGraph")}</button>
+          ${w.kind === "super_widget" ? "" : `
+            <button class="secondary compact" data-add-bar="${i}">${t("addBar")}</button>
+            <button class="secondary compact" data-add-circle="${i}">${t("addCircle")}</button>
+            <button class="secondary compact" data-add-graph="${i}">${t("addGraph")}</button>
+          `}
           <button class="danger compact" data-delete="${i}">${t("remove")}</button>
         </div>
       </div>
       <div class="widget-fields">
+        ${w.kind === "super_widget" ? `
+          <label class="wide">${t("superWidget")}<select data-i="${i}" data-k="superwidget_id">${availableSuperWidgets.map(item => `<option value="${esc(item.id)}" ${w.superwidget_id === item.id ? "selected" : ""}>${esc(item.name)}</option>`).join("")}</select></label>
+          ${w.superwidget_id === "cpu-command-dial" ? `
+            <label>${t("temperatureSource")}<select data-i="${i}" data-binding="temperature">
+              <option value="" ${!w.superwidget_bindings?.temperature ? "selected" : ""}>${t("automatic")}</option>
+              <option value="cpu_core" ${w.superwidget_bindings?.temperature === "cpu_core" ? "selected" : ""}>${t("cpuCoreTemperature")}</option>
+              <option value="cpu_socket" ${w.superwidget_bindings?.temperature === "cpu_socket" ? "selected" : ""}>${t("cpuSocketTemperature")}</option>
+            </select></label>
+          ` : ""}
+          <label class="wide">${t("fanSource")}<select data-i="${i}" data-binding="fan">
+            <option value="" ${!w.superwidget_bindings?.fan ? "selected" : ""}>${t("automatic")}</option>
+            ${availableFanSensors.map(sensor => `<option value="${esc(sensor.id)}" ${w.superwidget_bindings?.fan === sensor.id ? "selected" : ""}>${esc(sensor.name)}</option>`).join("")}
+          </select></label>
+          ${colourField(t("widgetBackground"), i, "superwidget_background_colour", w.superwidget_background_colour || "#000000")}
+          <label>${t("backgroundAlpha")}<input data-i="${i}" data-k="superwidget_background_opacity" type="range" min="0" max="1" step="0.05" value="${w.superwidget_background_opacity ?? 0}"></label>
+        ` : `
         <label>${t("type")}<select data-i="${i}" data-k="kind">${Object.keys(nameKeys).map(v => `<option value="${v}" ${w.kind === v ? "selected" : ""}>${widgetName(v)}</option>`).join("")}</select></label>
         <label>${t("visualisation")}<select data-i="${i}" data-k="render_mode">${Object.keys(modeKeys).map(v => `<option value="${v}" ${(w.render_mode || "text") === v ? "selected" : ""}>${modeName(v)}</option>`).join("")}</select></label>
         <label class="wide">${t("textFormat")}<input data-i="${i}" data-k="label_format" value="${esc(w.label_format)}" placeholder="GPU {value} MHz"></label>
         <label>${t("leftText")}<input data-i="${i}" data-k="left_text" value="${esc(w.left_text || "")}" placeholder="GPU "></label>
         <label>${t("rightText")}<input data-i="${i}" data-k="right_text" value="${esc(w.right_text || "")}" placeholder=" °C"></label>
+        `}
         <label>X<input data-i="${i}" data-k="x" type="number" value="${w.x}"></label>
         <label>Y<input data-i="${i}" data-k="y" type="number" value="${w.y}"></label>
         <label>${t("width")}<input data-i="${i}" data-k="width" type="number" min="1" value="${w.width}"></label>
         <label>${t("height")}<input data-i="${i}" data-k="height" type="number" min="1" value="${w.height}"></label>
-        <label>${t("font")}<select data-i="${i}" data-k="font">${fonts.map(font => `<option value="${font}" ${(w.font || "Segoe UI") === font ? "selected" : ""}>${font}</option>`).join("")}</select></label>
+        ${w.kind === "super_widget" ? "" : `<label>${t("font")}<select data-i="${i}" data-k="font">${fonts.map(font => `<option value="${font}" ${(w.font || "Segoe UI") === font ? "selected" : ""}>${font}</option>`).join("")}</select></label>`}
         <label>${t("fontSize")}<input data-i="${i}" data-k="font_size" type="number" min="6" value="${w.font_size}"></label>
         <label>${t("interval")}<input data-i="${i}" data-k="refresh_interval_ms" type="number" min="100" value="${w.refresh_interval_ms}"></label>
         ${w.kind === "gif" ? `
@@ -238,7 +289,7 @@ function renderWidgets() {
           <label class="toggle">${t("gifLoop")}<input data-i="${i}" data-k="gif_loop" type="checkbox" ${w.gif_loop !== false ? "checked" : ""}></label>
           <label>${t("gifFit")}<select data-i="${i}" data-k="gif_fit">${["contain","cover","stretch","centre"].map(mode => `<option value="${mode}" ${(w.gif_fit || "contain") === mode ? "selected" : ""}>${mode}</option>`).join("")}</select></label>
         ` : ""}
-        ${colourField(t("colour"), i, "colour", w.colour)}
+        ${w.kind === "super_widget" ? "" : colourField(t("colour"), i, "colour", w.colour)}
         ${colourField(t("gradient"), i, "secondary_colour", w.secondary_colour || w.colour)}
         <label>${t("opacity")}<input data-i="${i}" data-k="opacity" type="range" min="0.1" max="1" step="0.05" value="${w.opacity ?? 1}"></label>
         ${(w.render_mode || "text") === "graph" ? `
@@ -254,7 +305,7 @@ function renderWidgets() {
         ${colourField(t("criticalColour"), i, "critical_colour", w.critical_colour || "#ff4d6d")}
         <label>${t("circleThickness")}<input data-i="${i}" data-k="circle_thickness" type="number" min="1" value="${w.circle_thickness ?? 16}"></label>
         <label>${t("startAngle")}<input data-i="${i}" data-k="circle_start_angle" type="number" value="${w.circle_start_angle ?? -90}"></label>
-        <label>${t("circleSweep")}<input data-i="${i}" data-k="circle_sweep_angle" type="number" min="1" max="360" value="${w.circle_sweep_angle ?? 360}"></label>
+        ${w.kind === "super_widget" ? "" : `<label>${t("circleSweep")}<input data-i="${i}" data-k="circle_sweep_angle" type="number" min="1" max="360" value="${w.circle_sweep_angle ?? 360}"></label>`}
       </div>
     </div>`).join("");
   document.querySelectorAll("[data-card]").forEach(card => card.onclick = e => {
@@ -291,7 +342,7 @@ function renderWidgets() {
     renderWidgets();
     scheduleLivePreview();
   });
-  document.querySelectorAll("[data-i]").forEach(input => {
+  document.querySelectorAll("[data-i][data-k]").forEach(input => {
     const update = () => {
       readWidgetInput(input);
       if (input.type === "color") syncColourPicker(input);
@@ -302,7 +353,21 @@ function renderWidgets() {
     input.oninput = update;
     input.onchange = update;
   });
+  document.querySelectorAll("[data-binding]").forEach(input => {
+    const update = () => {
+      const widget = config.widgets[+input.dataset.i];
+      widget.superwidget_bindings ||= {};
+      widget.superwidget_bindings[input.dataset.binding] = input.value;
+      scheduleLivePreview();
+    };
+    input.oninput = update;
+    input.onchange = update;
+  });
   syncColourPickers();
+}
+
+function superWidgetName(id) {
+  return availableSuperWidgets.find(item => item.id === id)?.name || t("superWidget");
 }
 
 function colourField(label, index, key, value) {
@@ -779,9 +844,30 @@ $("add-rule").onclick=()=>{
 $("fullscreen-preview").onclick=()=>setPreviewFullscreen(!previewFullscreen);
 $("collapse-widgets").onclick=()=>{collapseAllWidgets();renderWidgets();};
 $("expand-widgets").onclick=()=>{expandAllWidgets();renderWidgets();};
-$("add-widget").onclick=()=>{const kind=$("new-widget-kind").value;const affix=defaultAffixes[kind]||{left:"",right:""};config.widgets.push({kind,render_mode:"text",enabled:true,left_text:affix.left,right_text:affix.right,x:20,y:20,width:kind==="gif"?96:180,height:kind==="gif"?96:42,font:"Segoe UI",font_size:24,colour:config.theme.foreground,secondary_colour:config.theme.accent,opacity:1,graph_background_colour:"#000000",graph_background_opacity:0,gif_path:null,gif_fps:8,gif_loop:true,gif_fit:"contain",glow:0,shadow:0,use_thresholds:false,warning_threshold:70,critical_threshold:90,warning_colour:"#ffd166",critical_colour:"#ff4d6d",circle_thickness:16,circle_start_angle:-90,circle_sweep_angle:360,refresh_interval_ms:1000,label_format:defaults[kind]});selectedWidget=config.widgets.length-1;selectedWidgets=new Set([selectedWidget]);collapsedWidgets.delete(selectedWidget);renderWidgets();renderOverlay();scheduleLivePreview();};
+$("add-widget").onclick=()=>{
+  const selection=$("new-widget-kind").value;
+  if(selection.startsWith("super:")){
+    const item=availableSuperWidgets.find(value=>value.id===selection.slice(6));
+    if(!item)return;
+    config.widgets.push({kind:"super_widget",superwidget_id:item.id,superwidget_background_colour:"#000000",superwidget_background_opacity:0,superwidget_bindings:{},render_mode:"text",enabled:true,left_text:"",right_text:"",x:20,y:20,width:item.width,height:item.height,font:"Bahnschrift",font_size:24,colour:"#ffffff",secondary_colour:"#1f99ff",opacity:1,graph_background_colour:"#000000",graph_background_opacity:0,gif_path:null,gif_fps:8,gif_loop:true,gif_fit:"contain",glow:0,shadow:0,use_thresholds:false,warning_threshold:70,critical_threshold:90,warning_colour:"#ffd166",critical_colour:"#ff4d6d",circle_thickness:16,circle_start_angle:-90,circle_sweep_angle:360,refresh_interval_ms:500,label_format:""});
+  }else{
+    const kind=selection;const affix=defaultAffixes[kind]||{left:"",right:""};
+    config.widgets.push({kind,superwidget_id:null,superwidget_background_colour:"#000000",superwidget_background_opacity:0,superwidget_bindings:{},render_mode:"text",enabled:true,left_text:affix.left,right_text:affix.right,x:20,y:20,width:kind==="gif"?96:180,height:kind==="gif"?96:42,font:"Segoe UI",font_size:24,colour:config.theme.foreground,secondary_colour:config.theme.accent,opacity:1,graph_background_colour:"#000000",graph_background_opacity:0,gif_path:null,gif_fps:8,gif_loop:true,gif_fit:"contain",glow:0,shadow:0,use_thresholds:false,warning_threshold:70,critical_threshold:90,warning_colour:"#ffd166",critical_colour:"#ff4d6d",circle_thickness:16,circle_start_angle:-90,circle_sweep_angle:360,refresh_interval_ms:1000,label_format:defaults[kind]});
+  }
+  selectedWidget=config.widgets.length-1;selectedWidgets=new Set([selectedWidget]);collapsedWidgets.delete(selectedWidget);renderWidgets();renderOverlay();scheduleLivePreview();
+};
 $("new-screen").onclick=async()=>{const name=askName(t("selectNewScreen"));if(!name)return;try{config=await invoke("new_screen",{name});currentScreen=name;collapseAllWidgets();bindConfig();await loadScreens(name);await refreshPreview();}catch(e){$("error").textContent=String(e);}};
-$("save-screen").onclick=async()=>{readForm();const name=askName(t("saveScreenName"),currentScreen);if(!name)return;try{await invoke("save_screen",{name,config});currentScreen=name;await loadScreens(name);$("status").textContent=t("screenSaved",{name});}catch(e){$("error").textContent=String(e);}};
+$("save-screen").onclick=async()=>{
+  readForm();
+  const name=currentScreen||askName(t("saveScreenName"));
+  if(!name)return;
+  try{
+    await invoke("save_screen",{name,config});
+    currentScreen=name;
+    await loadScreens(name);
+    $("status").textContent=t("screenSaved",{name});
+  }catch(e){$("error").textContent=String(e);}
+};
 $("load-screen").onclick=async()=>{const name=$("screen-list").value;if(!name)return;config=await invoke("load_screen",{name});currentScreen=name;selectedWidget=-1;selectedWidgets.clear();collapseAllWidgets();bindConfig();await refreshPreview();};
 $("delete-screen").onclick=async()=>{const name=$("screen-list").value;if(!name||!confirm(t("deleteConfirm",{name})))return;await invoke("delete_screen",{name});if(currentScreen===name)currentScreen="";await loadScreens();};
 $("export-package").onclick=async()=>{try{readForm();await invoke("export_package",{config});}catch(e){$("error").textContent=String(e);}};

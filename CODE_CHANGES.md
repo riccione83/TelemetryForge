@@ -5,6 +5,28 @@ made to TelemetryForge.
 
 ## Unreleased
 
+### CPU Command Dial Super Widget
+
+- Added the first Super Widget registry under
+  `%LOCALAPPDATA%\TelemetryForge\superwidgets`.
+- Added a manifest-driven CPU Command Dial as one movable and resizable
+  component.
+- Recreated the reference dial style with an outer tick ring, CPU frequency,
+  temperature gauge, fan-speed gauge and utilisation readout.
+- Replaced filled progress arcs with static scales and moving indicators for
+  CPU load, temperature and fan speed.
+- Added a matching GPU Command Dial with GPU clock, temperature, utilisation
+  and fan speed.
+- Merged Super Widgets into the normal Widget picker.
+- Added per-instance background colour/alpha, CPU temperature source and fan
+  sensor bindings.
+
+### Screen saving
+
+- Changed **Save as** to **Save** whenever a named screen is active.
+- Saving an active screen now updates it directly without asking for its name
+  again.
+
 ### Low-CPU rendering
 
 - Removed continuous interpolation frames for hardware sensors; values now

@@ -27,6 +27,10 @@ pub fn draw_all(image: &mut RgbImage, config: &AppConfig, sensors: &SensorSnapsh
             draw_gif(image, widget)?;
             continue;
         }
+        if widget.kind == WidgetKind::SuperWidget {
+            draw_superwidget(image, widget, sensors)?;
+            continue;
+        }
         let padding = widget
             .glow
             .saturating_mul(3)
@@ -113,6 +117,36 @@ pub fn draw_all(image: &mut RgbImage, config: &AppConfig, sensors: &SensorSnapsh
         }
         composite(image, &layer, origin_x, origin_y);
     }
+    Ok(())
+}
+
+fn draw_superwidget(
+    image: &mut RgbImage,
+    widget: &WidgetConfig,
+    sensors: &SensorSnapshot,
+) -> Result<()> {
+    let Some(id) = widget.superwidget_id.as_deref() else {
+        return Ok(());
+    };
+    let Some(manifest) = crate::superwidgets::find(id) else {
+        return Ok(());
+    };
+    let rendered = crate::superwidgets::renderer::draw(
+        &manifest,
+        widget.width,
+        widget.height,
+        sensors,
+        &widget.superwidget_background_colour,
+        widget.superwidget_background_opacity,
+        &widget.superwidget_bindings,
+    )?;
+    composite_rgba(
+        image,
+        &rendered,
+        widget.x,
+        widget.y,
+        widget.opacity.clamp(0.0, 1.0),
+    );
     Ok(())
 }
 
@@ -461,6 +495,7 @@ fn numeric(k: WidgetKind, s: &SensorSnapshot) -> Option<f32> {
         WidgetKind::FanSpeed => s.fan_speed,
         WidgetKind::Volume => s.system_volume,
         WidgetKind::Gif => None,
+        WidgetKind::SuperWidget => None,
         _ => None,
     }
 }
@@ -472,6 +507,7 @@ fn shown(k: WidgetKind, s: &SensorSnapshot) -> String {
         WidgetKind::GpuClock => frequency(s.gpu_clock),
         WidgetKind::Text => String::new(),
         WidgetKind::Gif => String::new(),
+        WidgetKind::SuperWidget => String::new(),
         WidgetKind::Fps => "--".into(),
         _ => numeric(k, s)
             .map(|v| format!("{v:.0}"))

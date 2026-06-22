@@ -35,6 +35,20 @@ pub fn visual_signature(config: &AppConfig, sensors: &SensorSnapshot) -> u64 {
             (elapsed / frame_duration).hash(&mut hasher);
             continue;
         }
+        if widget.kind == WidgetKind::SuperWidget {
+            for value in [
+                sensors.cpu_usage,
+                sensors.cpu_temperature,
+                sensors.cpu_clock,
+                sensors.gpu_usage,
+                sensors.gpu_temperature,
+                sensors.gpu_clock,
+                sensors.fan_speed,
+            ] {
+                value.map(|value| value.round() as i64).hash(&mut hasher);
+            }
+            continue;
+        }
         match widget.render_mode {
             WidgetRenderMode::Text => {
                 numeric(widget.kind, sensors)
@@ -87,6 +101,7 @@ fn numeric(kind: WidgetKind, sensors: &SensorSnapshot) -> Option<f32> {
         | WidgetKind::Fps
         | WidgetKind::Text
         | WidgetKind::Gif => None,
+        WidgetKind::SuperWidget => None,
     }
 }
 

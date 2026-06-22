@@ -115,6 +115,18 @@ from the Screen panel. Its editable source files are in
 
 ![MSI Forged Core background](samples/msi-forged-core/assets/background.png)
 
+## Super Widgets
+
+Super Widgets combine multiple sensors and custom graphics into one movable
+and resizable editor object. The first bundled component is **CPU Command
+Dial**, containing CPU frequency, temperature, utilisation and fan speed.
+Component manifests are installed under
+`%LOCALAPPDATA%\TelemetryForge\superwidgets`.
+
+Super Widgets appear in the normal Widget picker. Each instance can choose its
+own background colour/alpha and supported sensor bindings, such as CPU
+Core/Socket temperature or a specific fan source.
+
 The **System volume** widget reads the Windows default playback-device volume.
 It can be displayed as text, a bar, a circle or a historical graph without
 LibreHardwareMonitor.

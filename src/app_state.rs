@@ -21,6 +21,9 @@ pub struct AppState {
 
 impl AppState {
     pub fn load() -> Self {
+        if let Err(error) = crate::superwidgets::ensure_bundled() {
+            tracing::error!(error = %format!("{error:#}"), "could not install bundled superwidgets");
+        }
         let config_path = persistence::default_config_path();
         let config = match persistence::load_or_create(&config_path) {
             Ok(config) => config,

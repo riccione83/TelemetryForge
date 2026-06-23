@@ -24,6 +24,11 @@ Import [`samples/msi-forged-core.telemetryforge`](samples/msi-forged-core.teleme
 to use the 480×320 **MSI Forged Core** screen, including its background and
 widgets.
 
+
+Other examples:
+<img width="648" height="427" alt="Immagine 2026-06-23 082521" src="https://github.com/user-attachments/assets/97aefc45-90a2-41bb-9990-0af6d79027dd" />
+<img width="629" height="405" alt="Immagine 2026-06-23 082544" src="https://github.com/user-attachments/assets/0a66cb11-8fa4-4c85-9777-2d3898e58c1c" />
+
 ## Super Widgets
 
 Super Widgets combine multiple sensors and custom graphics into one movable

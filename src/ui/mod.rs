@@ -29,6 +29,7 @@ fn merge_screen_settings(mut screen: AppConfig, current: &AppConfig) -> AppConfi
     screen.cpu_temperature_source = current.cpu_temperature_source;
     screen.cpu_clock_source = current.cpu_clock_source;
     screen.fan_sensor = current.fan_sensor.clone();
+    screen.weather = current.weather.clone();
     screen.remote = current.remote.clone();
     screen.quick_screens = current.quick_screens.clone();
     screen
@@ -232,6 +233,7 @@ pub fn new_screen(state: State<AppState>, name: String) -> Result<AppConfig, Str
     config.libre_hardware_monitor_dll = current.libre_hardware_monitor_dll;
     config.cpu_clock_source = current.cpu_clock_source;
     config.fan_sensor = current.fan_sensor;
+    config.weather = current.weather;
     config.remote = current.remote;
     config.quick_screens = current.quick_screens;
     config.automation = current.automation;
@@ -336,6 +338,7 @@ pub fn test_sensors(state: State<AppState>) -> crate::sensors::model::SensorSnap
         config.cpu_temperature_source,
         config.cpu_clock_source,
         config.fan_sensor.as_deref(),
+        &config.weather,
     );
     *state.sensors.write() = snapshot.clone();
     snapshot
@@ -403,6 +406,7 @@ pub fn render_once(state: State<AppState>) -> Result<(), String> {
         config.cpu_temperature_source,
         config.cpu_clock_source,
         config.fan_sensor.as_deref(),
+        &config.weather,
     );
     let image = renderer::render(&config, &snapshot).map_err(|e| e.to_string())?;
     display_driver::send_frame(&config.display, &image).map_err(|e| e.to_string())?;
@@ -478,6 +482,7 @@ pub fn start_rendering_state(state: &AppState) -> Result<(), String> {
                 initial.cpu_temperature_source,
                 initial.cpu_clock_source,
                 initial.fan_sensor.as_deref(),
+                &initial.weather,
             );
             let mut displayed = target.clone();
             let mut previous_frame: Option<RgbImage> = None;
@@ -516,6 +521,7 @@ pub fn start_rendering_state(state: &AppState) -> Result<(), String> {
                         current.cpu_temperature_source,
                         current.cpu_clock_source,
                         current.fan_sensor.as_deref(),
+                        &current.weather,
                     );
                     update_histories(&mut next, &target, 120);
                     target = next;
@@ -726,6 +732,23 @@ fn update_displayed_snapshot(
     changed |= assign(&mut current.network_download, target.network_download);
     changed |= assign(&mut current.fan_speed, target.fan_speed);
     changed |= blend_volume(&mut current.system_volume, target.system_volume);
+    changed |= assign(
+        &mut current.weather_temperature,
+        target.weather_temperature,
+    );
+    changed |= assign(&mut current.weather_humidity, target.weather_humidity);
+    changed |= assign(
+        &mut current.weather_wind_speed,
+        target.weather_wind_speed,
+    );
+    if current.weather_code != target.weather_code {
+        current.weather_code = target.weather_code;
+        changed = true;
+    }
+    if current.weather_condition != target.weather_condition {
+        current.weather_condition.clone_from(&target.weather_condition);
+        changed = true;
+    }
     if current.history_cpu != target.history_cpu {
         current.history_cpu.clone_from(&target.history_cpu);
         changed = true;

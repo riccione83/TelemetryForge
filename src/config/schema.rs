@@ -14,10 +14,20 @@ pub struct AppConfig {
     pub cpu_temperature_source: CpuTemperatureSource,
     pub cpu_clock_source: CpuClockSource,
     pub fan_sensor: Option<String>,
+    pub weather: WeatherConfig,
     pub automation: AutomationConfig,
     pub transition: TransitionConfig,
     pub remote: RemoteConfig,
     pub quick_screens: QuickScreensConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WeatherConfig {
+    pub enabled: bool,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub refresh_minutes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -161,6 +171,9 @@ pub struct ThemeConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WidgetConfig {
+    pub editor_name: String,
+    pub locked: bool,
+    pub group_id: Option<String>,
     pub kind: WidgetKind,
     pub render_mode: WidgetRenderMode,
     pub enabled: bool,
@@ -221,6 +234,11 @@ pub enum WidgetKind {
     Text,
     Gif,
     Volume,
+    WeatherTemperature,
+    WeatherHumidity,
+    WeatherWind,
+    WeatherCondition,
+    WeatherIcon,
     SuperWidget,
 }
 
@@ -251,6 +269,7 @@ impl Default for AppConfig {
             cpu_temperature_source: CpuTemperatureSource::Core,
             cpu_clock_source: CpuClockSource::Average,
             fan_sensor: None,
+            weather: WeatherConfig::default(),
             automation: AutomationConfig::default(),
             transition: TransitionConfig::default(),
             remote: RemoteConfig::default(),
@@ -266,6 +285,17 @@ impl Default for RemoteConfig {
             authentication_enabled: false,
             username: "admin".into(),
             password_hash: String::new(),
+        }
+    }
+}
+
+impl Default for WeatherConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            latitude: 51.5074,
+            longitude: -0.1278,
+            refresh_minutes: 15,
         }
     }
 }
@@ -362,6 +392,9 @@ impl Default for WidgetConfig {
 impl WidgetConfig {
     pub fn new(kind: WidgetKind, x: i32, y: i32, label: &str) -> Self {
         Self {
+            editor_name: String::new(),
+            locked: false,
+            group_id: None,
             kind,
             render_mode: WidgetRenderMode::Text,
             enabled: true,
@@ -479,6 +512,22 @@ enabled: true
         let decoded: WidgetConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(decoded.graph_background_colour, "#000000");
         assert_eq!(decoded.graph_background_opacity, 0.0);
+    }
+
+    #[test]
+    fn legacy_widget_gets_editor_metadata_defaults() {
+        let yaml = r#"
+kind: cpu_usage
+enabled: true
+x: 12
+y: 34
+"#;
+        let decoded: WidgetConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(decoded.editor_name.is_empty());
+        assert!(!decoded.locked);
+        assert_eq!(decoded.group_id, None);
+        assert_eq!(decoded.x, 12);
+        assert_eq!(decoded.y, 34);
     }
 
     #[test]

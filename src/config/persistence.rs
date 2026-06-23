@@ -36,6 +36,7 @@ pub fn infer_active_screen(config_path: &Path, current: &AppConfig) -> Option<St
         profile.cpu_temperature_source = current.cpu_temperature_source;
         profile.cpu_clock_source = current.cpu_clock_source;
         profile.fan_sensor = current.fan_sensor.clone();
+        profile.weather = current.weather.clone();
         profile.remote = current.remote.clone();
         profile.quick_screens = current.quick_screens.clone();
         profile == *current

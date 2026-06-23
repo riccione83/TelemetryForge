@@ -23,6 +23,7 @@ pub fn load(name: &str) -> Result<FontArc> {
         "Courier New" => r"C:\Windows\Fonts\cour.ttf",
         "Impact" => r"C:\Windows\Fonts\impact.ttf",
         "Segoe UI Bold" => r"C:\Windows\Fonts\segoeuib.ttf",
+        "Segoe UI Symbol" => r"C:\Windows\Fonts\seguisym.ttf",
         "Tahoma" => r"C:\Windows\Fonts\tahoma.ttf",
         "Trebuchet MS" => r"C:\Windows\Fonts\trebuc.ttf",
         "Verdana" => r"C:\Windows\Fonts\verdana.ttf",

@@ -69,6 +69,10 @@ cargo build --release
 
 The executable is written to `target\release\TelemetryForge.exe`.
 
+Every push to `main` publishes a numbered Windows build such as
+`v0.2.0-build.17` and marks it as the GitHub Latest release. Stable milestones
+continue to use semantic tags such as `v0.3.0`.
+
 To create a Tauri installer:
 
 ```powershell
@@ -93,6 +97,16 @@ Some sensors may require administrator privileges.
 Screens are stored as YAML files inside the `screens` directory. Widgets can
 be dragged, resized, multi-selected, aligned and evenly distributed.
 
+The interface is split into **Editor** and **Setup** workspaces. Display,
+Remote Deck security, automation and weather configuration live in Setup,
+leaving the Editor focused on screen composition. The Layers panel can be
+collapsed and remembers its state.
+
+The Layers panel provides editable internal names, visibility, locking,
+front/back ordering and groups. Groups move together and resize
+proportionally. Undo/redo is available through the toolbar or `Ctrl+Z` and
+`Ctrl+Y`. Preview labels are shown only for selected widgets.
+
 Each widget supports:
 
 - text before and after the sensor value;
@@ -102,6 +116,19 @@ Each widget supports:
 - warning and critical thresholds;
 - text, bar, circle or historical graph rendering;
 - independent position and dimensions.
+
+Weather widgets are available for current temperature, humidity, wind speed
+and a text condition. A separate scalable monochrome weather icon widget can
+be styled with the normal colour, opacity, glow and shadow controls. Enable
+weather data and enter decimal latitude/longitude
+in the Weather panel. TelemetryForge uses Open-Meteo without an API key,
+caches the last successful response and refreshes no more often than every
+five minutes.
+
+Weather data is provided by [Open-Meteo.com](https://open-meteo.com/) under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The default
+open-access endpoint is intended for non-commercial use; commercial
+deployments should follow Open-Meteo's current API terms or self-host it.
 
 Circular gauges also support thickness, start angle and sweep angle.
 

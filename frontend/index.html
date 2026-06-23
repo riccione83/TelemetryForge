@@ -21,6 +21,10 @@
       <button id="render-toggle" data-i18n="startRendering">Start rendering</button>
     </div>
   </header>
+  <nav class="workspace-tabs" aria-label="Workspace">
+    <button id="show-editor" class="workspace-tab active" data-page="editor" data-i18n="editor">Editor</button>
+    <button id="show-setup" class="workspace-tab" data-page="setup" data-i18n="setup">Setup</button>
+  </nav>
   <main>
     <section class="preview-card">
       <div class="preview-head">
@@ -57,7 +61,7 @@
           <button id="export-package" class="secondary" data-i18n="exportPackage">Export package</button>
         </div>
       </div>
-      <div class="card">
+      <div class="card setup-card">
         <h2>Display</h2>
         <div class="grid">
           <label><span data-i18n="comPort">COM port</span>
@@ -100,7 +104,7 @@
           <label class="checkline"><input id="autostart" type="checkbox" /><span data-i18n="startWithWindows">Start with Windows</span></label>
         </div>
       </div>
-      <div class="card">
+      <div class="card setup-card">
         <div class="preview-head">
           <h2 data-i18n="remoteSecurity">Remote Deck security</h2>
           <button id="save-remote-security" class="secondary" data-i18n="saveRemoteSecurity">Save security</button>
@@ -126,7 +130,24 @@
           </div>
         </div>
       </div>
-      <div class="card">
+      <div id="layers-card" class="card collapsible-card">
+        <div class="preview-head">
+          <button id="toggle-layers" class="section-toggle" type="button" aria-expanded="true">
+            <span class="section-chevron">▾</span>
+            <span data-i18n="layers">Layers</span>
+          </button>
+          <div class="actions">
+            <button id="undo" class="secondary compact" data-i18n="undo">Undo</button>
+            <button id="redo" class="secondary compact" data-i18n="redo">Redo</button>
+            <button id="group-selected" class="secondary compact" data-i18n="group">Group</button>
+            <button id="ungroup-selected" class="secondary compact" data-i18n="ungroup">Ungroup</button>
+          </div>
+        </div>
+        <div id="layers-body" class="collapsible-body">
+          <div id="layers"></div>
+        </div>
+      </div>
+      <div class="card setup-card">
         <div class="preview-head">
           <h2 data-i18n="automation">Automation</h2>
           <button id="add-rule" class="secondary" data-i18n="addRule">+ Add rule</button>
@@ -147,6 +168,19 @@
         </div>
         <p class="hint" data-i18n="automationHint">Rules are evaluated from top to bottom. The first matching rule wins.</p>
         <div id="automation-rules"></div>
+      </div>
+      <div class="card setup-card">
+        <h2 data-i18n="weather">Weather</h2>
+        <div class="grid">
+          <label class="checkline"><input id="weatherEnabled" type="checkbox" /><span data-i18n="enableWeather">Enable weather data</span></label>
+          <label><span data-i18n="latitude">Latitude</span><input id="weatherLatitude" type="number" min="-90" max="90" step="0.0001" /></label>
+          <label><span data-i18n="longitude">Longitude</span><input id="weatherLongitude" type="number" min="-180" max="180" step="0.0001" /></label>
+          <label><span data-i18n="weatherRefresh">Refresh (minutes)</span><input id="weatherRefresh" type="number" min="5" max="1440" /></label>
+        </div>
+        <p class="hint"><span data-i18n="weatherHint">Current conditions are cached locally. Coordinates use decimal degrees.</span>
+          <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Weather data by Open-Meteo.com</a>
+          · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
+        </p>
       </div>
       <div class="card">
         <h2 data-i18n="backgroundTheme">Background and theme</h2>

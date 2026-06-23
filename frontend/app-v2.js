@@ -18,6 +18,92 @@ let gifPreviewBusy = false;
 let availableScreens = [];
 let availableSuperWidgets = [];
 let availableFanSensors = [];
+let undoStack = [], redoStack = [];
+
+function showWorkspacePage(page) {
+  const setup = page === "setup";
+  document.body.classList.toggle("setup-view", setup);
+  document.querySelectorAll(".workspace-tab").forEach(button => {
+    const active = button.dataset.page === page;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  localStorage.setItem("telemetryforge-workspace-page", page);
+  if (!setup) requestAnimationFrame(renderOverlay);
+}
+
+function setLayersCollapsed(collapsed) {
+  $("layers-card")?.classList.toggle("collapsed", collapsed);
+  $("toggle-layers")?.setAttribute("aria-expanded", String(!collapsed));
+  localStorage.setItem("telemetryforge-layers-collapsed", String(collapsed));
+}
+
+const cloneWidgets = () => JSON.parse(JSON.stringify(config.widgets));
+function recordUndo() {
+  undoStack.push(cloneWidgets());
+  if (undoStack.length > 60) undoStack.shift();
+  redoStack = [];
+  updateHistoryButtons();
+}
+function resetHistory() {
+  undoStack = [];
+  redoStack = [];
+  updateHistoryButtons();
+}
+function restoreWidgets(widgets) {
+  config.widgets = JSON.parse(JSON.stringify(widgets));
+  selectedWidget = -1;
+  selectedWidgets.clear();
+  collapsedWidgets.clear();
+  renderWidgets();
+  renderLayers();
+  renderOverlay();
+  scheduleLivePreview();
+  invoke("save_config",{config}).catch(error => $("error").textContent=String(error));
+}
+function undo() {
+  if (!undoStack.length) return;
+  redoStack.push(cloneWidgets());
+  restoreWidgets(undoStack.pop());
+  updateHistoryButtons();
+}
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(cloneWidgets());
+  restoreWidgets(redoStack.pop());
+  updateHistoryButtons();
+}
+function updateHistoryButtons() {
+  if ($("undo")) $("undo").disabled = !undoStack.length;
+  if ($("redo")) $("redo").disabled = !redoStack.length;
+  if ($("group-selected")) $("group-selected").disabled = selectedWidgets.size < 2;
+  if ($("ungroup-selected")) {
+    $("ungroup-selected").disabled = ![...selectedWidgets]
+      .some(index => config?.widgets[index]?.group_id);
+  }
+}
+
+function humaniseId(value) {
+  return String(value || "")
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function normaliseEditorMetadata() {
+  const counts = {};
+  config.widgets.forEach(widget => {
+    widget.locked ??= false;
+    widget.group_id ??= null;
+    const base = widget.kind === "super_widget"
+      ? (availableSuperWidgets.find(item => item.id === widget.superwidget_id)?.name ||
+          humaniseId(widget.superwidget_id) || t("superWidget"))
+      : `${widgetName(widget.kind)} · ${modeName(widget.render_mode || "text")}`;
+    counts[base] = (counts[base] || 0) + 1;
+    if (!widget.editor_name) widget.editor_name = `${base} ${counts[base]}`;
+  });
+}
 
 function applyRemoteInfo(info) {
   $("remote-enabled").checked = !!info.enabled;
@@ -49,7 +135,9 @@ const nameKeys = {
   gpu_usage:"widgetGpuUsage",gpu_clock:"widgetGpuClock",gpu_power:"widgetGpuPower",ram_usage:"widgetRam",vram_usage:"widgetVram",
   disk_usage:"widgetDisk",network_upload:"widgetUpload",network_download:"widgetDownload",
   fan_speed:"widgetFan",clock:"widgetClock",date:"widgetDate",fps:"widgetFps",text:"widgetText",gif:"widgetGif",
-  volume:"widgetVolume",super_widget:"widgetSuperWidget"
+  volume:"widgetVolume",weather_temperature:"widgetWeatherTemperature",weather_humidity:"widgetWeatherHumidity",
+  weather_wind:"widgetWeatherWind",weather_condition:"widgetWeatherCondition",weather_icon:"widgetWeatherIcon",
+  super_widget:"widgetSuperWidget"
 };
 const widgetName = kind => t(nameKeys[kind] || kind);
 const defaults = {
@@ -58,7 +146,9 @@ const defaults = {
   gpu_clock: "{value}", gpu_power: "{value}", ram_usage: "{value}", vram_usage: "{value}",
   disk_usage: "{value}", network_upload: "{value}", network_download: "{value}",
   fan_speed: "{value}", clock: "{value}", date: "{value}", fps: "{value}",
-  text: "Testo libero", gif: "", volume: "{value}", super_widget: ""
+  text: "Testo libero", gif: "", volume: "{value}", weather_temperature:"{value}",
+  weather_humidity:"{value}",weather_wind:"{value}",weather_condition:"{value}",super_widget: ""
+  ,weather_icon:"{value}"
 };
 const defaultAffixes = {
   cpu_temperature: {left:"CPU ", right:" °C"},
@@ -66,8 +156,10 @@ const defaultAffixes = {
   cpu_clock: {left:"CPU ", right:""},
   gpu_clock: {left:"GPU ", right:""},
   volume: {left:"VOL ", right:"%"}
+  ,weather_temperature:{left:"",right:" °C"},weather_humidity:{left:"",right:"%"},
+  weather_wind:{left:"",right:" km/h"}
 };
-const fonts = ["Segoe UI","Segoe UI Bold","Arial","Arial Bold","Bahnschrift","Calibri","Calibri Bold","Consolas","Consolas Bold","Courier New","Impact","Tahoma","Trebuchet MS","Verdana"];
+const fonts = ["Segoe UI","Segoe UI Bold","Segoe UI Symbol","Arial","Arial Bold","Bahnschrift","Calibri","Calibri Bold","Consolas","Consolas Bold","Courier New","Impact","Tahoma","Trebuchet MS","Verdana"];
 const modeKeys = {text:"modeText",bar:"modeBar",circle:"modeCircle",graph:"modeGraph"};
 const modeName = mode => t(modeKeys[mode] || mode);
 
@@ -109,6 +201,8 @@ async function boot() {
     applyRemoteInfo(remoteInfo);
   }
   collapseAllWidgets();
+  normaliseEditorMetadata();
+  resetHistory();
   refreshTranslatedUi();
   bindConfig();
   autostartEnabled = await invoke("get_autostart").catch(() => false);
@@ -146,12 +240,17 @@ function bindConfig() {
   config.automation ||= {enabled:false,default_screen:null,rules:[]};
   config.automation.rules ||= [];
   config.transition ||= {kind:"fade",duration_ms:450};
+  normaliseEditorMetadata();
   const values = {
     orientation: config.display.orientation, width: config.display.width, height: config.display.height,
     brightness: config.display.brightness, frameInterval: config.frame_interval_ms,
     cpuTemperatureSource: config.cpu_temperature_source || "core",
     cpuClockSource: config.cpu_clock_source || "average",
     fanSensor: config.fan_sensor || "",
+    weatherEnabled: config.weather?.enabled ?? false,
+    weatherLatitude: config.weather?.latitude ?? 51.5074,
+    weatherLongitude: config.weather?.longitude ?? -0.1278,
+    weatherRefresh: config.weather?.refresh_minutes ?? 15,
     backgroundPath: config.background.path || "", backgroundMode: config.background.mode,
     backgroundSource: config.background.source || "file",
     backgroundFolder: config.background.folder || "",
@@ -159,7 +258,10 @@ function bindConfig() {
     backgroundColour: config.background.colour, foreground: config.theme.foreground,
     accent: config.theme.accent
   };
-  Object.entries(values).forEach(([id, value]) => $(id).value = value);
+  Object.entries(values).forEach(([id, value]) => {
+    if ($(id).type === "checkbox") $(id).checked = !!value;
+    else $(id).value = value;
+  });
   syncColourPickers();
   $("screen").style.aspectRatio = `${config.display.width} / ${config.display.height}`;
   $("screen").style.setProperty("--display-ratio", config.display.width / config.display.height);
@@ -167,6 +269,7 @@ function bindConfig() {
   $("transitionKind").value = config.transition.kind || "fade";
   $("transitionDuration").value = config.transition.duration_ms || 450;
   renderWidgets();
+  renderLayers();
   populateAutomationScreens();
   renderRules();
   requestAnimationFrame(renderOverlay);
@@ -289,13 +392,113 @@ async function loadFanSensors(snapshot) {
   $("fanSensor").value = config.fan_sensor || "";
 }
 
+function selectLayer(index, additive = false) {
+  if (additive) {
+    if (selectedWidgets.has(index)) selectedWidgets.delete(index);
+    else selectedWidgets.add(index);
+    selectedWidget = selectedWidgets.has(index) ? index : [...selectedWidgets][0] ?? -1;
+  } else {
+    selectedWidget = index;
+    selectedWidgets = new Set([index]);
+  }
+  renderWidgets();
+  renderLayers();
+  renderOverlay();
+}
+
+function renderLayers() {
+  const root = $("layers");
+  if (!root) return;
+  root.className = "layers-list";
+  root.innerHTML = config.widgets.map((w, i) => ({w,i})).reverse().map(({w,i}) => `
+    <div class="layer-row ${selectedWidgets.has(i) || selectedWidget === i ? "selected" : ""}" data-layer="${i}">
+      <button class="secondary compact" data-layer-visible="${i}" title="${t("visible")}">${w.enabled ? "●" : "○"}</button>
+      <button class="secondary compact" data-layer-lock="${i}" title="${t("locked")}">${w.locked ? "🔒" : "🔓"}</button>
+      <div>
+        <input type="text" data-layer-name="${i}" value="${esc(w.editor_name)}" title="${t("editorName")}">
+        ${w.group_id ? `<div class="layer-group">${esc(w.group_id)}</div>` : ""}
+      </div>
+      <button class="secondary compact" data-layer-move="${i}" data-direction="1" title="${t("moveForward")}">↑</button>
+      <button class="secondary compact" data-layer-move="${i}" data-direction="-1" title="${t("moveBackward")}">↓</button>
+    </div>`).join("");
+  root.querySelectorAll("[data-layer]").forEach(row => row.onclick = event => {
+    if (event.target.closest("button,input")) return;
+    selectLayer(+row.dataset.layer, event.ctrlKey || event.metaKey);
+  });
+  root.querySelectorAll("[data-layer-visible]").forEach(button => button.onclick = () => {
+    recordUndo();
+    const index=+button.dataset.layerVisible;
+    config.widgets[index].enabled=!config.widgets[index].enabled;
+    renderLayers();renderWidgets();renderOverlay();scheduleLivePreview();
+    persistEditorChange();
+  });
+  root.querySelectorAll("[data-layer-lock]").forEach(button => button.onclick = () => {
+    recordUndo();
+    const index=+button.dataset.layerLock;
+    config.widgets[index].locked=!config.widgets[index].locked;
+    renderLayers();renderWidgets();renderOverlay();
+    persistEditorChange();
+  });
+  root.querySelectorAll("[data-layer-name]").forEach(input => {
+    input.onfocus=()=>recordUndo();
+    input.onchange=()=>{
+      const index=+input.dataset.layerName;
+      config.widgets[index].editor_name=input.value.trim()||config.widgets[index].editor_name;
+      renderLayers();renderWidgets();renderOverlay();
+      invoke("save_config",{config}).catch(error=>$("error").textContent=String(error));
+    };
+  });
+  root.querySelectorAll("[data-layer-move]").forEach(button => button.onclick = () => {
+    moveLayer(+button.dataset.layerMove,+button.dataset.direction);
+  });
+  updateHistoryButtons();
+}
+
+function moveLayer(from, direction) {
+  const to=from+direction;
+  if(to<0||to>=config.widgets.length)return;
+  recordUndo();
+  [config.widgets[from],config.widgets[to]]=[config.widgets[to],config.widgets[from]];
+  const remap=index=>index===from?to:index===to?from:index;
+  selectedWidgets=new Set([...selectedWidgets].map(remap));
+  selectedWidget=remap(selectedWidget);
+  renderLayers();renderWidgets();renderOverlay();scheduleLivePreview();
+  persistEditorChange();
+}
+
+function groupSelected() {
+  const indexes=[...selectedWidgets];
+  if(indexes.length<2)return;
+  recordUndo();
+  const used = new Set(config.widgets.map(widget => widget.group_id).filter(Boolean));
+  let number = 1;
+  while (used.has(`Group ${number}`)) number++;
+  const id=`Group ${number}`;
+  indexes.forEach(index=>config.widgets[index].group_id=id);
+  renderLayers();renderWidgets();renderOverlay();scheduleLivePreview();
+  persistEditorChange();
+}
+
+function ungroupSelected() {
+  const groups=new Set([...selectedWidgets].map(index=>config.widgets[index]?.group_id).filter(Boolean));
+  if(!groups.size)return;
+  recordUndo();
+  config.widgets.forEach(widget=>{if(groups.has(widget.group_id))widget.group_id=null;});
+  renderLayers();renderWidgets();renderOverlay();scheduleLivePreview();
+  persistEditorChange();
+}
+
+function persistEditorChange() {
+  invoke("save_config", {config}).catch(error => $("error").textContent = String(error));
+}
+
 function renderWidgets() {
   $("widgets").innerHTML = config.widgets.map((w, i) => `
     <div class="widget-card ${collapsedWidgets.has(i) ? "collapsed" : ""} ${selectedWidgets.has(i) || selectedWidget === i ? "selected" : ""}" data-card="${i}">
       <div class="widget-title">
         <div class="widget-heading" data-collapse="${i}" title="${collapsedWidgets.has(i) ? t("expand") : t("collapse")}">
           <button class="collapse-widget" type="button" aria-label="${collapsedWidgets.has(i) ? t("expand") : t("collapse")}"></button>
-          <label class="toggle"><input data-i="${i}" data-k="enabled" type="checkbox" ${w.enabled ? "checked" : ""}><strong>${esc(w.kind === "super_widget" ? superWidgetName(w.superwidget_id) : `${widgetName(w.kind)} · ${modeName(w.render_mode || "text")}`)}</strong></label>
+          <label class="toggle"><input data-i="${i}" data-k="enabled" type="checkbox" ${w.enabled ? "checked" : ""}><strong>${esc(w.editor_name)}</strong></label>
         </div>
         <div class="actions widget-actions">
           ${w.kind === "super_widget" ? "" : `
@@ -307,6 +510,8 @@ function renderWidgets() {
         </div>
       </div>
       <div class="widget-fields">
+        <label class="wide">${t("editorName")}<input data-i="${i}" data-k="editor_name" value="${esc(w.editor_name)}"></label>
+        <label class="toggle">${t("locked")}<input data-i="${i}" data-k="locked" type="checkbox" ${w.locked ? "checked" : ""}></label>
         ${w.kind === "super_widget" ? `
           <label class="wide">${t("superWidget")}<select data-i="${i}" data-k="superwidget_id">${availableSuperWidgets.map(item => `<option value="${esc(item.id)}" ${w.superwidget_id === item.id ? "selected" : ""}>${esc(item.name)}</option>`).join("")}</select></label>
           ${w.superwidget_id === "cpu-command-dial" ? `
@@ -365,7 +570,7 @@ function renderWidgets() {
     if (e.target.closest("button,input,select,[data-collapse]")) return;
     selectedWidget = +card.dataset.card;
     selectedWidgets = new Set([selectedWidget]);
-    renderWidgets(); renderOverlay();
+    renderWidgets(); renderLayers(); renderOverlay();
   });
   document.querySelectorAll("[data-collapse]").forEach(heading => heading.onclick = e => {
     if (e.target.closest(".toggle")) return;
@@ -377,12 +582,13 @@ function renderWidgets() {
     renderWidgets();
   });
   document.querySelectorAll("[data-delete]").forEach(button => button.onclick = () => {
+    recordUndo();
     const deleted = +button.dataset.delete;
     config.widgets.splice(deleted, 1); selectedWidget = -1; selectedWidgets.clear();
     collapsedWidgets = new Set([...collapsedWidgets]
       .filter(index => index !== deleted)
       .map(index => index > deleted ? index - 1 : index));
-    renderWidgets(); renderOverlay();
+    renderWidgets(); renderLayers(); renderOverlay(); scheduleLivePreview();
   });
   document.querySelectorAll("[data-add-bar]").forEach(button => button.onclick = () => addVisualWidget(+button.dataset.addBar, "bar"));
   document.querySelectorAll("[data-add-circle]").forEach(button => button.onclick = () => addVisualWidget(+button.dataset.addCircle, "circle"));
@@ -396,9 +602,11 @@ function renderWidgets() {
     scheduleLivePreview();
   });
   document.querySelectorAll("[data-i][data-k]").forEach(input => {
+    input.onfocus = () => recordUndo();
     const update = () => {
       readWidgetInput(input);
       if (input.type === "color") syncColourPicker(input);
+      if (["editor_name","enabled","locked"].includes(input.dataset.k)) renderLayers();
       renderOverlay();
       scheduleLivePreview();
       if (input.dataset.k === "render_mode") renderWidgets();
@@ -407,6 +615,7 @@ function renderWidgets() {
     input.onchange = update;
   });
   document.querySelectorAll("[data-binding]").forEach(input => {
+    input.onfocus = () => recordUndo();
     const update = () => {
       const widget = config.widgets[+input.dataset.i];
       widget.superwidget_bindings ||= {};
@@ -472,6 +681,7 @@ function focusWidgetEditor(index) {
   collapsedWidgets.delete(index);
   if (previewFullscreen) setPreviewFullscreen(false);
   renderWidgets();
+  renderLayers();
   renderOverlay();
   requestAnimationFrame(() => {
     document.querySelector(`[data-card="${index}"]`)?.scrollIntoView({
@@ -482,6 +692,7 @@ function focusWidgetEditor(index) {
 }
 
 function addVisualWidget(sourceIndex, renderMode) {
+  recordUndo();
   const source = config.widgets[sourceIndex];
   const visual = {
     ...source,
@@ -500,11 +711,15 @@ function addVisualWidget(sourceIndex, renderMode) {
     width: renderMode === "circle" ? 80 : 150,
     height: renderMode === "circle" ? 80 : renderMode === "graph" ? 70 : 20
   };
+  visual.editor_name = `${source.editor_name || widgetName(source.kind)} ${modeName(renderMode)}`;
+  visual.locked = false;
+  visual.group_id = null;
   config.widgets.push(visual);
   selectedWidget = config.widgets.length - 1;
   selectedWidgets = new Set([selectedWidget]);
   collapsedWidgets.delete(selectedWidget);
   renderWidgets();
+  renderLayers();
   renderOverlay();
   scheduleLivePreview();
 }
@@ -553,7 +768,7 @@ async function refreshGifPreview() {
 
 function renderOverlay() {
   const layer = $("widget-overlay");
-  if (!layer?.clientWidth) return;
+  if (!config?.display || !layer?.clientWidth) return;
   layer.innerHTML = "";
   layer.onpointerdown = startMarquee;
   layer.oncontextmenu = event => {
@@ -565,14 +780,14 @@ function renderOverlay() {
   config.widgets.forEach((w, i) => {
     if (!w.enabled) return;
     const el = document.createElement("div");
-    el.className = `widget-handle ${selectedWidgets.has(i) || selectedWidget === i ? "selected" : ""}`;
+    el.className = `widget-handle ${selectedWidgets.has(i) || selectedWidget === i ? "selected" : ""} ${w.locked ? "locked" : ""}`;
     el.dataset.index = i;
     Object.assign(el.style, {
       left: `${w.x*sx}px`, top: `${w.y*sy}px`,
       width: `${Math.max(w.width*sx,30)}px`, height: `${Math.max(w.height*sy,18)}px`,
       zIndex: selectedWidget === i ? "1002" : selectedWidgets.has(i) ? "1001" : String(i + 1)
     });
-    el.innerHTML = `<span>${esc(widgetName(w.kind))} · ${modeName(w.render_mode || "text")}</span><i class="resize-handle"></i>`;
+    el.innerHTML = `<span>${w.locked ? "🔒 " : ""}${esc(w.editor_name)}</span><i class="resize-handle"></i>`;
     el.onpointerdown = event => {
       if (event.target.classList.contains("resize-handle")) return;
       if (event.ctrlKey || event.metaKey) {
@@ -581,6 +796,7 @@ function renderOverlay() {
         if (selectedWidgets.has(i)) selectedWidgets.delete(i); else selectedWidgets.add(i);
         selectedWidget = selectedWidgets.has(i) ? i : [...selectedWidgets][0] ?? -1;
         renderWidgets();
+        renderLayers();
         renderOverlay();
         return;
       }
@@ -590,6 +806,11 @@ function renderOverlay() {
       }
       collapsedWidgets.delete(i);
       updateOverlayStacking();
+      if (w.locked) {
+        renderWidgets();
+        renderLayers();
+        return;
+      }
       startDrag(event);
     };
     el.ondblclick = event => {
@@ -604,11 +825,14 @@ function renderOverlay() {
         selectedWidgets = new Set([i]);
         selectedWidget = i;
         renderWidgets();
+        renderLayers();
         renderOverlay();
       }
       if (selectedWidgets.size >= 2) showObjectMenu(event.clientX, event.clientY);
     };
-    el.querySelector(".resize-handle").onpointerdown = event => startResize(event, i, el);
+    el.querySelector(".resize-handle").onpointerdown = event => {
+      if (!w.locked) startResize(event, i, el);
+    };
     layer.appendChild(el);
   });
 }
@@ -620,6 +844,7 @@ function updateOverlayStacking() {
     const index = +handle.dataset.index;
     const selected = selectedWidgets.has(index) || selectedWidget === index;
     handle.classList.toggle("selected", selected);
+    handle.classList.toggle("locked", !!config.widgets[index]?.locked);
     handle.style.zIndex = selectedWidget === index
       ? "1002"
       : selectedWidgets.has(index) ? "1001" : String(index + 1);
@@ -669,6 +894,7 @@ function startMarquee(event) {
       selectedWidgets.clear();
     }
     renderWidgets();
+    renderLayers();
     renderOverlay();
   };
   layer.onpointermove = move;
@@ -687,8 +913,9 @@ function hideObjectMenu() {
 }
 
 async function applyLayout(action) {
-  const indexes = [...selectedWidgets].filter(i => config.widgets[i]?.enabled);
+  const indexes = [...selectedWidgets].filter(i => config.widgets[i]?.enabled && !config.widgets[i]?.locked);
   if (indexes.length < 2) return;
+  recordUndo();
   const widgets = indexes.map(i => config.widgets[i]);
   if (action === "align" || action === "align-distribute") {
     const centre = widgets.reduce((sum, w) => sum + w.x + w.width/2, 0) / widgets.length;
@@ -716,10 +943,21 @@ async function applyLayout(action) {
 function startResize(e, index, el) {
   e.preventDefault();
   e.stopPropagation();
-  previewInteractionActive = true;
   const w = config.widgets[index];
+  if (w.locked) return;
+  previewInteractionActive = true;
+  recordUndo();
   const rect = $("widget-overlay").getBoundingClientRect();
   const startX = e.clientX, startY = e.clientY, startWidth = w.width, startHeight = w.height;
+  const groupIndexes = w.group_id
+    ? config.widgets.map((item,i)=>item.group_id===w.group_id&&!item.locked?i:-1).filter(i=>i>=0)
+    : [index];
+  const groupItems = groupIndexes.map(i=>({index:i,...config.widgets[i]}));
+  const minX=Math.min(...groupItems.map(item=>item.x));
+  const minY=Math.min(...groupItems.map(item=>item.y));
+  const maxX=Math.max(...groupItems.map(item=>item.x+item.width));
+  const maxY=Math.max(...groupItems.map(item=>item.y+item.height));
+  const groupWidth=Math.max(1,maxX-minX),groupHeight=Math.max(1,maxY-minY);
   selectedWidget = index;
   selectedWidgets = new Set([index]);
   updateOverlayStacking();
@@ -727,15 +965,31 @@ function startResize(e, index, el) {
   el.onpointermove = m => {
     const dx = (m.clientX-startX)*config.display.width/rect.width;
     const dy = (m.clientY-startY)*config.display.height/rect.height;
-    w.width = Math.round(Math.max(8, Math.min(config.display.width-w.x, startWidth+dx)));
-    w.height = Math.round(Math.max(8, Math.min(config.display.height-w.y, startHeight+dy)));
-    el.style.width = `${w.width*rect.width/config.display.width}px`;
-    el.style.height = `${w.height*rect.height/config.display.height}px`;
+    if(groupItems.length>1){
+      const maxScaleX=Math.max(.1,(config.display.width-minX)/groupWidth);
+      const maxScaleY=Math.max(.1,(config.display.height-minY)/groupHeight);
+      const scaleX=Math.max(.1,Math.min(maxScaleX,(groupWidth+dx)/groupWidth));
+      const scaleY=Math.max(.1,Math.min(maxScaleY,(groupHeight+dy)/groupHeight));
+      groupItems.forEach(item=>{
+        const target=config.widgets[item.index];
+        target.x=Math.round(minX+(item.x-minX)*scaleX);
+        target.y=Math.round(minY+(item.y-minY)*scaleY);
+        target.width=Math.max(8,Math.round(item.width*scaleX));
+        target.height=Math.max(8,Math.round(item.height*scaleY));
+      });
+      renderOverlay();
+    }else{
+      w.width = Math.round(Math.max(8, Math.min(config.display.width-w.x, startWidth+dx)));
+      w.height = Math.round(Math.max(8, Math.min(config.display.height-w.y, startHeight+dy)));
+      el.style.width = `${w.width*rect.width/config.display.width}px`;
+      el.style.height = `${w.height*rect.height/config.display.height}px`;
+    }
   };
   const end = async () => {
     el.onpointermove = el.onpointerup = el.onpointercancel = null;
     previewInteractionActive = false;
     renderWidgets();
+    renderLayers();
     await invoke("save_config", {config});
     previewRefreshPending = false;
     await refreshPreview();
@@ -750,24 +1004,37 @@ function startDrag(e) {
   const sx = e.clientX, sy = e.clientY, ox = w.x, oy = w.y;
   selectedWidget = i;
   updateOverlayStacking();
-  const moving = selectedWidgets.has(i) && selectedWidgets.size > 1
-    ? [...selectedWidgets].map(index => ({index, x:config.widgets[index].x, y:config.widgets[index].y}))
-    : [{index:i, x:ox, y:oy}];
+  recordUndo();
+  const groupIndexes=w.group_id
+    ? config.widgets.map((item,index)=>item.group_id===w.group_id&&!item.locked?index:-1).filter(index=>index>=0)
+    : [];
+  const movingIndexes = groupIndexes.length
+    ? groupIndexes
+    : selectedWidgets.has(i) && selectedWidgets.size > 1
+      ? [...selectedWidgets].filter(index=>!config.widgets[index].locked)
+      : [i];
+  const moving = movingIndexes.map(index => ({index, x:config.widgets[index].x, y:config.widgets[index].y}));
+  const minX=Math.min(...moving.map(item=>item.x));
+  const minY=Math.min(...moving.map(item=>item.y));
+  const maxX=Math.max(...moving.map(item=>item.x+config.widgets[item.index].width));
+  const maxY=Math.max(...moving.map(item=>item.y+config.widgets[item.index].height));
   el.setPointerCapture(e.pointerId);
   el.onpointermove = m => {
-    const dx=(m.clientX-sx)*config.display.width/rect.width;
-    const dy=(m.clientY-sy)*config.display.height/rect.height;
+    const requestedDx=(m.clientX-sx)*config.display.width/rect.width;
+    const requestedDy=(m.clientY-sy)*config.display.height/rect.height;
+    const dx=Math.max(-minX,Math.min(config.display.width-maxX,requestedDx));
+    const dy=Math.max(-minY,Math.min(config.display.height-maxY,requestedDy));
     moving.forEach(item => {
       const target=config.widgets[item.index];
-      target.x=Math.round(Math.max(0,Math.min(config.display.width-target.width,item.x+dx)));
-      target.y=Math.round(Math.max(0,Math.min(config.display.height-target.height,item.y+dy)));
+      target.x=Math.round(item.x+dx);
+      target.y=Math.round(item.y+dy);
       const handle=$(`widget-overlay`).querySelector(`[data-index="${item.index}"]`);
       if(handle){handle.style.left=`${target.x*rect.width/config.display.width}px`;handle.style.top=`${target.y*rect.height/config.display.height}px`;}
     });
   };
   const end = async () => {
     el.onpointermove = el.onpointerup = el.onpointercancel = null;
-    renderWidgets(); await invoke("save_config", {config}); await refreshPreview();
+    renderWidgets(); renderLayers(); await invoke("save_config", {config}); await refreshPreview();
   };
   el.onpointerup = el.onpointercancel = end;
 }
@@ -781,6 +1048,11 @@ function readForm() {
   config.cpu_temperature_source = $("cpuTemperatureSource").value;
   config.cpu_clock_source = $("cpuClockSource").value;
   config.fan_sensor = $("fanSensor").value || null;
+  config.weather ||= {};
+  config.weather.enabled = $("weatherEnabled").checked;
+  config.weather.latitude = Math.max(-90, Math.min(90, +$("weatherLatitude").value || 0));
+  config.weather.longitude = Math.max(-180, Math.min(180, +$("weatherLongitude").value || 0));
+  config.weather.refresh_minutes = Math.max(5, +$("weatherRefresh").value || 15);
   config.automation.enabled = $("automationEnabled").checked;
   config.automation.default_screen = $("defaultScreen").value || null;
   config.transition.kind = $("transitionKind").value;
@@ -890,6 +1162,13 @@ $("brightness").oninput=()=>{
   },180);
 };
 $("save").onclick=save;
+$("show-editor").onclick=()=>showWorkspacePage("editor");
+$("show-setup").onclick=()=>showWorkspacePage("setup");
+$("toggle-layers").onclick=()=>setLayersCollapsed(!$("layers-card").classList.contains("collapsed"));
+$("undo").onclick=undo;
+$("redo").onclick=redo;
+$("group-selected").onclick=groupSelected;
+$("ungroup-selected").onclick=ungroupSelected;
 async function saveRemoteSecurity(){
   try{
     const settings={
@@ -927,18 +1206,24 @@ $("import-superwidget").onclick=async()=>{
   }catch(error){$("error").textContent=String(error);}
 };
 $("add-widget").onclick=()=>{
+  recordUndo();
   const selection=$("new-widget-kind").value;
+  if(selection.startsWith("weather_")) {
+    config.weather ||= {};
+    config.weather.enabled = true;
+    $("weatherEnabled").checked = true;
+  }
   if(selection.startsWith("super:")){
     const item=availableSuperWidgets.find(value=>value.id===selection.slice(6));
     if(!item)return;
-    config.widgets.push({kind:"super_widget",superwidget_id:item.id,superwidget_background_colour:"#000000",superwidget_background_opacity:0,superwidget_bindings:{},render_mode:"text",enabled:true,left_text:"",right_text:"",x:20,y:20,width:item.width,height:item.height,font:"Bahnschrift",font_size:24,colour:"#ffffff",secondary_colour:"#1f99ff",opacity:1,graph_background_colour:"#000000",graph_background_opacity:0,gif_path:null,gif_fps:8,gif_loop:true,gif_fit:"contain",glow:0,shadow:0,use_thresholds:false,warning_threshold:70,critical_threshold:90,warning_colour:"#ffd166",critical_colour:"#ff4d6d",circle_thickness:16,circle_start_angle:-90,circle_sweep_angle:360,refresh_interval_ms:500,label_format:""});
+    config.widgets.push({editor_name:`${item.name} ${config.widgets.filter(w=>w.superwidget_id===item.id).length+1}`,locked:false,group_id:null,kind:"super_widget",superwidget_id:item.id,superwidget_background_colour:"#000000",superwidget_background_opacity:0,superwidget_bindings:{},render_mode:"text",enabled:true,left_text:"",right_text:"",x:20,y:20,width:item.width,height:item.height,font:"Bahnschrift",font_size:24,colour:"#ffffff",secondary_colour:"#1f99ff",opacity:1,graph_background_colour:"#000000",graph_background_opacity:0,gif_path:null,gif_fps:8,gif_loop:true,gif_fit:"contain",glow:0,shadow:0,use_thresholds:false,warning_threshold:70,critical_threshold:90,warning_colour:"#ffd166",critical_colour:"#ff4d6d",circle_thickness:16,circle_start_angle:-90,circle_sweep_angle:360,refresh_interval_ms:500,label_format:""});
   }else{
     const kind=selection;const affix=defaultAffixes[kind]||{left:"",right:""};
-    config.widgets.push({kind,superwidget_id:null,superwidget_background_colour:"#000000",superwidget_background_opacity:0,superwidget_bindings:{},render_mode:"text",enabled:true,left_text:affix.left,right_text:affix.right,x:20,y:20,width:kind==="gif"?96:180,height:kind==="gif"?96:42,font:"Segoe UI",font_size:24,colour:config.theme.foreground,secondary_colour:config.theme.accent,opacity:1,graph_background_colour:"#000000",graph_background_opacity:0,gif_path:null,gif_fps:8,gif_loop:true,gif_fit:"contain",glow:0,shadow:0,use_thresholds:false,warning_threshold:70,critical_threshold:90,warning_colour:"#ffd166",critical_colour:"#ff4d6d",circle_thickness:16,circle_start_angle:-90,circle_sweep_angle:360,refresh_interval_ms:1000,label_format:defaults[kind]});
+    config.widgets.push({editor_name:`${widgetName(kind)} ${config.widgets.filter(w=>w.kind===kind).length+1}`,locked:false,group_id:null,kind,superwidget_id:null,superwidget_background_colour:"#000000",superwidget_background_opacity:0,superwidget_bindings:{},render_mode:"text",enabled:true,left_text:affix.left,right_text:affix.right,x:20,y:20,width:kind==="gif"?96:kind==="weather_icon"?72:180,height:kind==="gif"?96:kind==="weather_icon"?72:42,font:kind==="weather_icon"?"Segoe UI Symbol":"Segoe UI",font_size:kind==="weather_icon"?56:24,colour:config.theme.foreground,secondary_colour:config.theme.accent,opacity:1,graph_background_colour:"#000000",graph_background_opacity:0,gif_path:null,gif_fps:8,gif_loop:true,gif_fit:"contain",glow:0,shadow:0,use_thresholds:false,warning_threshold:70,critical_threshold:90,warning_colour:"#ffd166",critical_colour:"#ff4d6d",circle_thickness:16,circle_start_angle:-90,circle_sweep_angle:360,refresh_interval_ms:1000,label_format:defaults[kind]});
   }
-  selectedWidget=config.widgets.length-1;selectedWidgets=new Set([selectedWidget]);collapsedWidgets.delete(selectedWidget);renderWidgets();renderOverlay();scheduleLivePreview();
+  selectedWidget=config.widgets.length-1;selectedWidgets=new Set([selectedWidget]);collapsedWidgets.delete(selectedWidget);renderWidgets();renderLayers();renderOverlay();scheduleLivePreview();
 };
-$("new-screen").onclick=async()=>{const name=askName(t("selectNewScreen"));if(!name)return;try{config=await invoke("new_screen",{name});currentScreen=name;collapseAllWidgets();bindConfig();await loadScreens(name);await refreshPreview();}catch(e){$("error").textContent=String(e);}};
+$("new-screen").onclick=async()=>{const name=askName(t("selectNewScreen"));if(!name)return;try{config=await invoke("new_screen",{name});currentScreen=name;resetHistory();collapseAllWidgets();bindConfig();await loadScreens(name);await refreshPreview();}catch(e){$("error").textContent=String(e);}};
 $("save-screen").onclick=async()=>{
   readForm();
   const name=currentScreen||askName(t("saveScreenName"));
@@ -957,6 +1242,7 @@ $("load-screen").onclick=async()=>{
     $("error").textContent="";
     config=await invoke("load_screen",{name});
     currentScreen=name;
+    resetHistory();
     selectedWidget=-1;
     selectedWidgets.clear();
     collapseAllWidgets();
@@ -970,13 +1256,14 @@ $("load-screen").onclick=async()=>{
 };
 $("delete-screen").onclick=async()=>{const name=$("screen-list").value;if(!name||!confirm(t("deleteConfirm",{name})))return;await invoke("delete_screen",{name});if(currentScreen===name)currentScreen="";await loadScreens();};
 $("export-package").onclick=async()=>{try{readForm();await invoke("export_package",{config});}catch(e){$("error").textContent=String(e);}};
-$("import-package").onclick=async()=>{try{const imported=await invoke("import_package");if(!imported)return;config=imported;currentScreen="";collapseAllWidgets();bindConfig();await refreshPreview();}catch(e){$("error").textContent=String(e);}};
+$("import-package").onclick=async()=>{try{const imported=await invoke("import_package");if(!imported)return;config=imported;currentScreen="";resetHistory();collapseAllWidgets();bindConfig();await refreshPreview();}catch(e){$("error").textContent=String(e);}};
 document.querySelectorAll("[data-quick-load]").forEach(button => button.onclick=async()=>{
   const slot=button.dataset.quickLoad;
   const name=$(`quick-${slot}`).value;
   if(!name)return;
   config=await invoke("load_screen",{name});
   currentScreen=name;
+  resetHistory();
   collapseAllWidgets();
   bindConfig();
   await loadScreens(name);
@@ -989,6 +1276,20 @@ $("send-once").onclick=async()=>{try{await save();await invoke("render_once");}c
 window.addEventListener("resize",renderOverlay);
 window.addEventListener("keydown", event => {
   if (event.key === "Escape" && previewFullscreen) setPreviewFullscreen(false);
+  const editing = ["INPUT","TEXTAREA","SELECT"].includes(document.activeElement?.tagName);
+  if ((event.ctrlKey || event.metaKey) && !editing && event.key.toLowerCase()==="z") {
+    event.preventDefault();
+    event.shiftKey ? redo() : undo();
+  }
+  if ((event.ctrlKey || event.metaKey) && !editing && event.key.toLowerCase()==="y") {
+    event.preventDefault(); redo();
+  }
+  if (event.key === "F2" && !editing && selectedWidget >= 0) {
+    event.preventDefault();
+    const widget=config.widgets[selectedWidget];
+    const name=window.prompt(t("editorName"),widget.editor_name)?.trim();
+    if(name){recordUndo();widget.editor_name=name;renderWidgets();renderLayers();renderOverlay();scheduleLivePreview();persistEditorChange();}
+  }
 });
 document.addEventListener("pointerdown", event => {
   if (!event.target.closest("#object-menu")) hideObjectMenu();
@@ -996,6 +1297,8 @@ document.addEventListener("pointerdown", event => {
 document.querySelectorAll("[data-layout-action]").forEach(button =>
   button.onclick = () => applyLayout(button.dataset.layoutAction));
 window.addEventListener("turzx-language-changed", refreshTranslatedUi);
+showWorkspacePage(localStorage.getItem("telemetryforge-workspace-page") === "setup" ? "setup" : "editor");
+setLayersCollapsed(localStorage.getItem("telemetryforge-layers-collapsed") === "true");
 function esc(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function fmt(v){return v==null?"--":Math.round(v);}
 boot().catch(e=>$("error").textContent=String(e));

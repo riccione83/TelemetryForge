@@ -67,9 +67,9 @@ jobs:
             target/release/TelemetryForge.exe `
             target/release/TelemetryForge.exe.sha256 `
             --target $env:GITHUB_SHA `
-            --prerelease `
+            --latest `
             --title "TelemetryForge $tag" `
-            --notes "Automated Windows build from main commit $shortSha."
+            --notes "Latest automated Windows build from main commit $shortSha."
 
       - name: Create versioned release
         if: startsWith(github.ref, 'refs/tags/v')

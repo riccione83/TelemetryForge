@@ -1,8 +1,8 @@
 use super::{
     libre_hardware_monitor::Reader as HardwareReader, model::SensorSnapshot,
-    windows_volume::Reader as VolumeReader,
+    weather, windows_volume::Reader as VolumeReader,
 };
-use crate::config::schema::{CpuClockSource, CpuTemperatureSource};
+use crate::config::schema::{CpuClockSource, CpuTemperatureSource, WeatherConfig};
 use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
@@ -20,6 +20,8 @@ pub struct SensorPoller {
     last_hardware_refresh: Option<Instant>,
     hardware_refresh_interval: Duration,
     volume_reader: VolumeReader,
+    weather_snapshot: SensorSnapshot,
+    last_weather_refresh: Option<Instant>,
 }
 
 impl SensorPoller {
@@ -44,6 +46,8 @@ impl SensorPoller {
             last_hardware_refresh: None,
             hardware_refresh_interval: Duration::from_secs(2),
             volume_reader: VolumeReader::new(),
+            weather_snapshot: SensorSnapshot::default(),
+            last_weather_refresh: None,
         }
     }
 
@@ -57,6 +61,7 @@ impl SensorPoller {
         cpu_temperature_source: CpuTemperatureSource,
         cpu_clock_source: CpuClockSource,
         fan_sensor: Option<&str>,
+        weather_config: &WeatherConfig,
     ) -> SensorSnapshot {
         self.system.refresh_cpu_usage();
         self.system.refresh_memory();
@@ -98,6 +103,17 @@ impl SensorPoller {
             self.last_hardware_refresh = Some(Instant::now());
         }
         let hardware = &self.hardware_snapshot;
+        let weather_due = weather_config.enabled && self.last_weather_refresh.is_none_or(|last| {
+            last.elapsed() >= Duration::from_secs(weather_config.refresh_minutes.max(5) * 60)
+        });
+        if weather_due {
+            match weather::read(weather_config) {
+                Ok(snapshot) => self.weather_snapshot = snapshot,
+                Err(error) => tracing::warn!(error = %format!("{error:#}"), "weather refresh failed"),
+            }
+            self.last_weather_refresh = Some(Instant::now());
+        }
+        let weather = &self.weather_snapshot;
         SensorSnapshot {
             cpu_temperature: select_cpu_temperature(hardware, cpu_temperature_source),
             cpu_temperature_core: hardware.cpu_temperature_core,
@@ -131,6 +147,11 @@ impl SensorPoller {
                 })
                 .or(hardware.fan_speed),
             system_volume: self.volume_reader.read(),
+            weather_temperature: weather.weather_temperature,
+            weather_humidity: weather.weather_humidity,
+            weather_wind_speed: weather.weather_wind_speed,
+            weather_code: weather.weather_code,
+            weather_condition: weather.weather_condition.clone(),
             fan_sensors: hardware.fan_sensors.clone(),
             ..Default::default()
         }
@@ -192,6 +213,7 @@ pub fn read_snapshot(
     cpu_temperature_source: CpuTemperatureSource,
     cpu_clock_source: CpuClockSource,
     fan_sensor: Option<&str>,
+    weather_config: &WeatherConfig,
 ) -> SensorSnapshot {
     let mut poller = SensorPoller::new();
     std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
@@ -200,6 +222,7 @@ pub fn read_snapshot(
         cpu_temperature_source,
         cpu_clock_source,
         fan_sensor,
+        weather_config,
     )
 }
 

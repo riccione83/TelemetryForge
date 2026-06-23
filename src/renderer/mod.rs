@@ -29,6 +29,14 @@ pub fn visual_signature(config: &AppConfig, sensors: &SensorSnapshot) -> u64 {
     for widget in config.widgets.iter().filter(|widget| widget.enabled) {
         widget.kind.hash(&mut hasher);
         widget.render_mode.hash(&mut hasher);
+        if matches!(
+            widget.kind,
+            WidgetKind::WeatherCondition | WidgetKind::WeatherIcon
+        ) {
+            sensors.weather_condition.hash(&mut hasher);
+            sensors.weather_code.hash(&mut hasher);
+            continue;
+        }
         if widget.kind == WidgetKind::Gif {
             let frame_duration = (1000 / widget.gif_fps.clamp(1, 30) as u128).max(1);
             let elapsed = ANIMATION_START.elapsed().as_millis();
@@ -109,6 +117,11 @@ fn numeric(kind: WidgetKind, sensors: &SensorSnapshot) -> Option<f32> {
         WidgetKind::NetworkDownload => sensors.network_download,
         WidgetKind::FanSpeed => sensors.fan_speed,
         WidgetKind::Volume => sensors.system_volume,
+        WidgetKind::WeatherTemperature => sensors.weather_temperature,
+        WidgetKind::WeatherHumidity => sensors.weather_humidity,
+        WidgetKind::WeatherWind => sensors.weather_wind_speed,
+        WidgetKind::WeatherCondition => None,
+        WidgetKind::WeatherIcon => None,
         WidgetKind::Clock
         | WidgetKind::Date
         | WidgetKind::Fps
@@ -125,6 +138,9 @@ fn maximum(kind: WidgetKind) -> f32 {
         WidgetKind::GpuClock | WidgetKind::FanSpeed => 3000.0,
         WidgetKind::NetworkUpload | WidgetKind::NetworkDownload => 10000.0,
         WidgetKind::Volume => 100.0,
+        WidgetKind::WeatherTemperature => 50.0,
+        WidgetKind::WeatherHumidity => 100.0,
+        WidgetKind::WeatherWind => 150.0,
         _ => 100.0,
     }
 }

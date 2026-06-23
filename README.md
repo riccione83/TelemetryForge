@@ -13,6 +13,10 @@ An open-source Windows desktop application for TURZX/Turing Smart Screen
 - Smooth animations and partial display updates
 - Automatic screen rules with fade, slide, dissolve and glitch transitions
 - English and Italian user interfaces
+- Lightweight weather widgets using cached Open-Meteo current conditions
+
+Weather data attribution: [Open-Meteo.com](https://open-meteo.com/),
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 ## Included sample
 

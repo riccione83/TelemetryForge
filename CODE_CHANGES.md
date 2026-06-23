@@ -3,7 +3,7 @@
 This document tracks the most important user-facing and architectural changes
 made to TelemetryForge.
 
-## Unreleased
+## Current development build — 2026-06-23
 
 ### Remote Deck LAN
 
@@ -32,6 +32,36 @@ made to TelemetryForge.
   the shared application configuration.
 - Synchronized Quick Screens between the Windows app and Remote Deck.
 - Added one-time migration of existing desktop assignments.
+
+### Professional editor
+
+- Split the interface into focused Editor and Setup workspaces.
+- Moved Display, Remote Deck security, Automation and Weather into Setup.
+- Made the Layers panel collapsible with its state remembered locally.
+- Added undo/redo history with `Ctrl+Z`, `Ctrl+Y` and `Ctrl+Shift+Z`.
+- Added a Layers panel shared by the desktop app and Remote Deck.
+- Added editable internal widget names, visibility, locking and front/back
+  ordering.
+- Added widget groups that move together and resize proportionally.
+- Added `F2` quick rename for the primary selected widget.
+- Removed persistent widget labels and outlines from the preview; editor names
+  now appear only on selected widgets.
+
+### Weather widgets
+
+- Added current temperature, humidity, wind speed and condition widgets.
+- Added a scalable monochrome weather icon widget with colour, glow, shadow
+  and opacity support.
+- Added configurable latitude, longitude and refresh interval shared by the
+  desktop editor and Remote Deck.
+- Added low-frequency Open-Meteo polling with short timeouts and cached values
+  so weather does not increase renderer CPU usage.
+
+### Release workflow
+
+- Main-branch builds are now published as full numbered releases and marked
+  as GitHub Latest, so the newest downloadable executable appears first.
+- Kept semantic version tag releases for stable milestones.
 
 ## 0.2.0 — 2026-06-22
 

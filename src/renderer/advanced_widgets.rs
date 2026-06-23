@@ -62,15 +62,20 @@ pub fn draw_all(image: &mut RgbImage, config: &AppConfig, sensors: &SensorSnapsh
                     .label_format
                     .replace("{value:.0}", &value)
                     .replace("{value}", &value);
-                draw_text_mut(
-                    &mut layer,
-                    primary,
-                    local_widget.x,
-                    local_widget.y,
-                    widget.font_size,
-                    &font,
-                    &format!("{}{}{}", widget.left_text, middle, widget.right_text),
-                );
+                let text = format!("{}{}{}", widget.left_text, middle, widget.right_text);
+                if widget.kind == WidgetKind::WeatherIcon {
+                    draw_centred_glyph(&mut layer, &local_widget, primary, &font, &text);
+                } else {
+                    draw_text_mut(
+                        &mut layer,
+                        primary,
+                        local_widget.x,
+                        local_widget.y,
+                        widget.font_size,
+                        &font,
+                        &text,
+                    );
+                }
             }
             WidgetRenderMode::Bar => bar(
                 &mut layer,
@@ -494,6 +499,11 @@ fn numeric(k: WidgetKind, s: &SensorSnapshot) -> Option<f32> {
         WidgetKind::NetworkDownload => s.network_download,
         WidgetKind::FanSpeed => s.fan_speed,
         WidgetKind::Volume => s.system_volume,
+        WidgetKind::WeatherTemperature => s.weather_temperature,
+        WidgetKind::WeatherHumidity => s.weather_humidity,
+        WidgetKind::WeatherWind => s.weather_wind_speed,
+        WidgetKind::WeatherCondition => None,
+        WidgetKind::WeatherIcon => None,
         WidgetKind::Gif => None,
         WidgetKind::SuperWidget => None,
         _ => None,
@@ -509,9 +519,104 @@ fn shown(k: WidgetKind, s: &SensorSnapshot) -> String {
         WidgetKind::Gif => String::new(),
         WidgetKind::SuperWidget => String::new(),
         WidgetKind::Fps => "--".into(),
+        WidgetKind::WeatherCondition => s
+            .weather_condition
+            .clone()
+            .unwrap_or_else(|| "--".into()),
+        WidgetKind::WeatherIcon => s
+            .weather_code
+            .map(weather_icon)
+            .unwrap_or("--")
+            .into(),
         _ => numeric(k, s)
             .map(|v| format!("{v:.0}"))
             .unwrap_or_else(|| "--".into()),
+    }
+}
+
+fn draw_centred_glyph(
+    layer: &mut RgbaImage,
+    widget: &WidgetConfig,
+    colour: Rgba<u8>,
+    font: &ab_glyph::FontArc,
+    text: &str,
+) {
+    let margin = widget.font_size.ceil().max(8.0) as u32;
+    let scratch_width = widget
+        .width
+        .max((widget.font_size * 3.0).ceil() as u32)
+        .saturating_add(margin * 2);
+    let scratch_height = widget
+        .height
+        .max((widget.font_size * 3.0).ceil() as u32)
+        .saturating_add(margin * 2);
+    let mut scratch = RgbaImage::new(scratch_width.max(1), scratch_height.max(1));
+    draw_text_mut(
+        &mut scratch,
+        colour,
+        margin as i32,
+        margin as i32,
+        widget.font_size,
+        font,
+        text,
+    );
+    let Some((left, top, right, bottom)) = visible_alpha_bounds(&scratch) else {
+        return;
+    };
+    let glyph_width = right - left + 1;
+    let glyph_height = bottom - top + 1;
+    let target_x = widget.x + (widget.width as i32 - glyph_width as i32) / 2;
+    let target_y = widget.y + (widget.height as i32 - glyph_height as i32) / 2;
+    for y in 0..glyph_height {
+        for x in 0..glyph_width {
+            let pixel = scratch.get_pixel(left + x, top + y);
+            if pixel[3] == 0 {
+                continue;
+            }
+            let destination_x = target_x + x as i32;
+            let destination_y = target_y + y as i32;
+            if inside(layer, destination_x, destination_y) {
+                layer.put_pixel(destination_x as u32, destination_y as u32, *pixel);
+            }
+        }
+    }
+}
+
+fn visible_alpha_bounds(image: &RgbaImage) -> Option<(u32, u32, u32, u32)> {
+    alpha_bounds_above(image, 8)
+}
+
+fn alpha_bounds_above(image: &RgbaImage, threshold: u8) -> Option<(u32, u32, u32, u32)> {
+    let mut left = image.width();
+    let mut top = image.height();
+    let mut right = 0;
+    let mut bottom = 0;
+    let mut found = false;
+    for (x, y, pixel) in image.enumerate_pixels() {
+        if pixel[3] <= threshold {
+            continue;
+        }
+        found = true;
+        left = left.min(x);
+        top = top.min(y);
+        right = right.max(x);
+        bottom = bottom.max(y);
+    }
+    found.then_some((left, top, right, bottom))
+}
+
+fn weather_icon(code: u16) -> &'static str {
+    match code {
+        0 => "☀",
+        1 => "☀",
+        2 => "⛅",
+        3 => "☁",
+        45 | 48 => "≋",
+        51 | 53 | 55 | 56 | 57 => "☂",
+        61 | 63 | 65 | 66 | 67 | 80..=82 => "☔",
+        71 | 73 | 75 | 77 | 85 | 86 => "❄",
+        95..=99 => "⚡",
+        _ => "?",
     }
 }
 
@@ -538,6 +643,9 @@ fn max_for(k: WidgetKind) -> f32 {
         WidgetKind::GpuClock | WidgetKind::FanSpeed => 3000.0,
         WidgetKind::NetworkUpload | WidgetKind::NetworkDownload => 10000.0,
         WidgetKind::Volume => 100.0,
+        WidgetKind::WeatherTemperature => 50.0,
+        WidgetKind::WeatherHumidity => 100.0,
+        WidgetKind::WeatherWind => 150.0,
         _ => 100.0,
     }
 }
@@ -680,5 +788,42 @@ mod tests {
         assert_eq!(frequency(Some(518.0)), "518 MHz");
         assert_eq!(frequency(Some(4850.0)), "4.85 GHz");
         assert_eq!(frequency(None), "--");
+    }
+
+    #[test]
+    fn weather_codes_select_clear_rain_and_storm_icons() {
+        assert_eq!(weather_icon(0), "☀");
+        assert_eq!(weather_icon(63), "☔");
+        assert_eq!(weather_icon(95), "⚡");
+    }
+
+    #[test]
+    fn weather_icon_is_visually_centred_inside_its_widget_box() {
+        let font = super::super::fonts::load("Segoe UI Symbol").unwrap();
+        let mut widget = WidgetConfig::new(WidgetKind::WeatherIcon, 6, 6, "{value}");
+        widget.width = 72;
+        widget.height = 72;
+        widget.font_size = 56.0;
+        let mut layer = RgbaImage::new(84, 84);
+        draw_centred_glyph(
+            &mut layer,
+            &widget,
+            Rgba([255, 255, 255, 255]),
+            &font,
+            "☀",
+        );
+        let (left, top, right, bottom) = visible_alpha_bounds(&layer).unwrap();
+        let glyph_centre_x = (left + right) as i32;
+        let glyph_centre_y = (top + bottom) as i32;
+        let widget_centre_x = widget.x * 2 + widget.width as i32 - 1;
+        let widget_centre_y = widget.y * 2 + widget.height as i32 - 1;
+        assert!(
+            (glyph_centre_x - widget_centre_x).abs() <= 1,
+            "horizontal centre {glyph_centre_x}, expected {widget_centre_x}, bounds {left},{right}"
+        );
+        assert!(
+            (glyph_centre_y - widget_centre_y).abs() <= 1,
+            "vertical centre {glyph_centre_y}, expected {widget_centre_y}, bounds {top},{bottom}"
+        );
     }
 }

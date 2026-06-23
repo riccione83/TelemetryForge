@@ -303,6 +303,7 @@ fn new_screen(state: &AppState, name: String) -> Result<Value, String> {
     config.cpu_temperature_source = current.cpu_temperature_source;
     config.cpu_clock_source = current.cpu_clock_source;
     config.fan_sensor = current.fan_sensor;
+    config.weather = current.weather;
     config.automation = current.automation;
     config.transition = current.transition;
     config.remote = current.remote;
@@ -328,6 +329,7 @@ fn merge_screen_settings(mut screen: AppConfig, current: &AppConfig) -> AppConfi
     screen.cpu_temperature_source = current.cpu_temperature_source;
     screen.cpu_clock_source = current.cpu_clock_source;
     screen.fan_sensor = current.fan_sensor.clone();
+    screen.weather = current.weather.clone();
     screen.remote = current.remote.clone();
     screen.quick_screens = current.quick_screens.clone();
     screen
@@ -346,6 +348,7 @@ fn test_sensors(state: &AppState) -> Result<Value, String> {
         config.cpu_temperature_source,
         config.cpu_clock_source,
         config.fan_sensor.as_deref(),
+        &config.weather,
     );
     *state.sensors.write() = snapshot.clone();
     value(snapshot)
@@ -358,6 +361,7 @@ fn render_once(state: &AppState) -> Result<(), String> {
         config.cpu_temperature_source,
         config.cpu_clock_source,
         config.fan_sensor.as_deref(),
+        &config.weather,
     );
     let image = renderer::render(&config, &snapshot).map_err(error)?;
     display_driver::send_frame(&config.display, &image).map_err(error)?;

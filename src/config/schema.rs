@@ -17,6 +17,7 @@ pub struct AppConfig {
     pub weather: WeatherConfig,
     pub automation: AutomationConfig,
     pub transition: TransitionConfig,
+    pub effects: EffectsConfig,
     pub remote: RemoteConfig,
     pub quick_screens: QuickScreensConfig,
 }
@@ -84,6 +85,24 @@ pub enum AutomationRuleKind {
 pub struct TransitionConfig {
     pub kind: TransitionKind,
     pub duration_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EffectsConfig {
+    pub boot_animation_enabled: bool,
+    pub boot_animation: BootAnimationKind,
+    pub boot_duration_ms: u64,
+    pub boot_screen: Option<String>,
+    pub boot_screen_hold_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BootAnimationKind {
+    Fade,
+    Scanlines,
+    Forge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -272,6 +291,7 @@ impl Default for AppConfig {
             weather: WeatherConfig::default(),
             automation: AutomationConfig::default(),
             transition: TransitionConfig::default(),
+            effects: EffectsConfig::default(),
             remote: RemoteConfig::default(),
             quick_screens: QuickScreensConfig::default(),
         }
@@ -343,6 +363,24 @@ impl Default for TransitionConfig {
 impl Default for TransitionKind {
     fn default() -> Self {
         Self::Fade
+    }
+}
+
+impl Default for EffectsConfig {
+    fn default() -> Self {
+        Self {
+            boot_animation_enabled: true,
+            boot_animation: BootAnimationKind::Forge,
+            boot_duration_ms: 900,
+            boot_screen: None,
+            boot_screen_hold_ms: 500,
+        }
+    }
+}
+
+impl Default for BootAnimationKind {
+    fn default() -> Self {
+        Self::Forge
     }
 }
 

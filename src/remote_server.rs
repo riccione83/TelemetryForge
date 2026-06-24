@@ -306,6 +306,7 @@ fn new_screen(state: &AppState, name: String) -> Result<Value, String> {
     config.weather = current.weather;
     config.automation = current.automation;
     config.transition = current.transition;
+    config.effects = current.effects;
     config.remote = current.remote;
     config.quick_screens = current.quick_screens;
     config.widgets.clear();
@@ -325,6 +326,7 @@ fn new_screen(state: &AppState, name: String) -> Result<Value, String> {
 fn merge_screen_settings(mut screen: AppConfig, current: &AppConfig) -> AppConfig {
     screen.automation = current.automation.clone();
     screen.transition = current.transition.clone();
+    screen.effects = current.effects.clone();
     screen.libre_hardware_monitor_dll = current.libre_hardware_monitor_dll.clone();
     screen.cpu_temperature_source = current.cpu_temperature_source;
     screen.cpu_clock_source = current.cpu_clock_source;

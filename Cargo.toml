@@ -1,6 +1,6 @@
 [package]
 name = "telemetry-forge"
-version = "0.2.0"
+version = "0.3.0"
 description = "Visual telemetry dashboard editor for TURZX/Turing USB displays"
 authors = ["TelemetryForge contributors"]
 license = "MIT"

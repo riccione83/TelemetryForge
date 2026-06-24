@@ -12,6 +12,8 @@ An open-source Windows desktop application for TURZX/Turing Smart Screen
 - Per-widget fonts, gradients, opacity, glow, shadows and thresholds
 - Multi-select, group movement, alignment and distribution
 - Smooth animations and partial display updates
+- Optional boot animation and premium screen-transition effects
+- Share export with a `.telemetryforge` package and PNG preview
 - Assignable Gaming, Minimal and Idle quick screens
 - Automatic screen rules and configurable screen transitions
 - English and Italian user interfaces
@@ -70,7 +72,7 @@ cargo build --release
 The executable is written to `target\release\TelemetryForge.exe`.
 
 Every push to `main` publishes a numbered Windows build such as
-`v0.2.0-build.17` and marks it as the GitHub Latest release. Stable milestones
+`v0.3.0-build.17` and marks it as the GitHub Latest release. Stable milestones
 continue to use semantic tags such as `v0.3.0`.
 
 To create a Tauri installer:
@@ -199,6 +201,19 @@ tray. Screen changes can use no transition, fade, slide, dissolve or glitch,
 with a configurable duration. Each rule also has activation and return delays
 to prevent brief workload spikes from repeatedly switching screens.
 
+## Premium effects and sharing
+
+Setup includes a toggleable boot animation that runs once during Windows
+autostart. Manual **Start rendering** skips it, so the effect feels like a
+real system power-on sequence instead of repeating while editing. The included
+modes are Forge Core, Scanlines and Fade In, with a configurable duration. You
+can optionally choose a saved screen, such as **TelemetryForge Boot**, as the
+boot screen before TelemetryForge transitions to the current active screen.
+
+The **Share** button exports the current screen as a `.telemetryforge`
+package and writes a PNG preview next to it, making it easy to post a layout
+on GitHub, Reddit or Discord.
+
 ## Background slideshow
 
 The background source can be a solid colour, a single image, or a folder.
@@ -269,9 +284,10 @@ implementation.
 
 ## Releases and automated builds
 
-Version tags such as `v0.2.0` create stable GitHub releases. Every push to
-`main` also creates a separate prerelease such as `v0.2.0-build.42`, preserving
-the build history instead of replacing one continuous download.
+Version tags such as `v0.3.0` create stable GitHub releases. Every push to
+`main` also creates a separate numbered build such as `v0.3.0-build.42`,
+preserving the build history while keeping the newest executable marked as
+GitHub Latest.
 
 ## License
 

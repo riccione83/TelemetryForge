@@ -1,5 +1,7 @@
 use crate::{
-    config::schema::{AppConfig, AutomationRule, AutomationRuleKind, TransitionKind},
+    config::schema::{
+        AppConfig, AutomationRule, AutomationRuleKind, BootAnimationKind, TransitionKind,
+    },
     sensors::model::SensorSnapshot,
 };
 use image::{Rgb, RgbImage};
@@ -167,6 +169,57 @@ pub struct Transition {
     duration: Duration,
 }
 
+pub fn boot_frame(target: &RgbImage, kind: BootAnimationKind, progress: f32) -> RgbImage {
+    let progress = smoothstep(progress.clamp(0.0, 1.0));
+    let black = Rgb([0, 0, 0]);
+    let mut output = RgbImage::new(target.width(), target.height());
+    for y in 0..target.height() {
+        for x in 0..target.width() {
+            let target_pixel = *target.get_pixel(x, y);
+            let pixel = match kind {
+                BootAnimationKind::Fade => blend(black, target_pixel, progress),
+                BootAnimationKind::Scanlines => {
+                    let reveal = ((y as f32 / target.height() as f32) - progress).abs();
+                    let line = if y % 4 == 0 { 0.72 } else { 1.0 };
+                    let amount = if y as f32 <= target.height() as f32 * progress {
+                        line
+                    } else if reveal < 0.035 {
+                        1.0 - reveal / 0.035
+                    } else {
+                        0.0
+                    };
+                    scale(target_pixel, amount)
+                }
+                BootAnimationKind::Forge => {
+                    let cx = target.width() as f32 / 2.0;
+                    let cy = target.height() as f32 / 2.0;
+                    let dx = x as f32 - cx;
+                    let dy = y as f32 - cy;
+                    let distance = (dx * dx + dy * dy).sqrt();
+                    let max_distance = (cx * cx + cy * cy).sqrt();
+                    let ring = (distance / max_distance - progress).abs();
+                    let reveal = distance / max_distance <= progress;
+                    let pulse = if ring < 0.055 {
+                        1.0 - ring / 0.055
+                    } else {
+                        0.0
+                    };
+                    let glitch = hash(x / 8, y / 6) as f32 / u32::MAX as f32;
+                    let base: f32 = if reveal { 0.92 } else { 0.0 };
+                    let glow = pulse * (0.75 + glitch * 0.25);
+                    let mut pixel = scale(target_pixel, base.max(glow));
+                    if pulse > 0.0 {
+                        pixel = blend(pixel, Rgb([100, 216, 203]), pulse * 0.45);
+                    }
+                    pixel
+                }
+            };
+            output.put_pixel(x, y, pixel);
+        }
+    }
+    output
+}
+
 impl Transition {
     pub fn new(from: RgbImage, kind: TransitionKind, duration_ms: u64) -> Option<Self> {
         (kind != TransitionKind::None && duration_ms > 0).then(|| Self {
@@ -183,6 +236,10 @@ impl Transition {
         let frame = transition_frame(&self.from, target, self.kind, progress);
         (frame, progress >= 1.0)
     }
+}
+
+fn smoothstep(value: f32) -> f32 {
+    value * value * (3.0 - 2.0 * value)
 }
 
 fn transition_frame(
@@ -246,6 +303,15 @@ fn blend(a: Rgb<u8>, b: Rgb<u8>, amount: f32) -> Rgb<u8> {
     ])
 }
 
+fn scale(pixel: Rgb<u8>, amount: f32) -> Rgb<u8> {
+    let amount = amount.clamp(0.0, 1.35);
+    Rgb([
+        (pixel[0] as f32 * amount).clamp(0.0, 255.0) as u8,
+        (pixel[1] as f32 * amount).clamp(0.0, 255.0) as u8,
+        (pixel[2] as f32 * amount).clamp(0.0, 255.0) as u8,
+    ])
+}
+
 fn hash(x: u32, y: u32) -> u32 {
     let mut value = x.wrapping_mul(0x45d9f3b) ^ y.wrapping_mul(0x119de1f3);
     value ^= value >> 16;
@@ -270,6 +336,16 @@ mod tests {
             transition_frame(&from, &target, TransitionKind::Fade, 1.0),
             target
         );
+    }
+
+    #[test]
+    fn boot_frame_reaches_visible_target_size() {
+        let target = RgbImage::from_pixel(8, 6, Rgb([80, 160, 220]));
+        let frame = boot_frame(&target, BootAnimationKind::Forge, 0.5);
+        assert_eq!(frame.dimensions(), target.dimensions());
+        assert!(frame
+            .pixels()
+            .any(|pixel| pixel[0] > 0 || pixel[1] > 0 || pixel[2] > 0));
     }
 
     #[test]

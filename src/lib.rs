@@ -37,6 +37,7 @@ pub fn run() {
             ui::new_screen,
             ui::delete_screen,
             ui::export_package,
+            ui::share_package,
             ui::import_package,
             ui::get_preview,
             ui::preview_config,
@@ -88,7 +89,9 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
                 }
-                if let Err(error) = ui::start_rendering(app.state::<AppState>()) {
+                if let Err(error) =
+                    ui::start_rendering_from_windows_startup(app.state::<AppState>())
+                {
                     tracing::error!(%error, "could not start rendering during Windows startup");
                 }
             }

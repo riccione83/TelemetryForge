@@ -3,7 +3,7 @@
 This document tracks the most important user-facing and architectural changes
 made to TelemetryForge.
 
-## Current development build — 2026-06-23
+## 0.3.0 — 2026-06-24
 
 ### Remote Deck LAN
 
@@ -62,6 +62,22 @@ made to TelemetryForge.
 - Main-branch builds are now published as full numbered releases and marked
   as GitHub Latest, so the newest downloadable executable appears first.
 - Kept semantic version tag releases for stable milestones.
+
+### Premium effects and sharing
+
+- Added a configurable boot animation that can be enabled or disabled from
+  Setup.
+- Added Forge Core, Scanlines and Fade In boot animation modes with
+  configurable duration.
+- Added a selectable boot screen and hold time before transitioning to the
+  current active screen.
+- Kept the boot animation as a start-only renderer effect so it does not add
+  CPU cost during normal rendering.
+- Limited boot animation playback to Windows autostart; manual and Remote
+  Deck rendering starts skip the boot sequence.
+- Added a **Share** action that exports the current `.telemetryforge` package
+  and a PNG preview side by side.
+- Added an editable bundled **TelemetryForge Boot** sample screen.
 
 ## 0.2.0 — 2026-06-22
 

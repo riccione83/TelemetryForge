@@ -1,0 +1,109 @@
+display:
+  model: Turing Smart Screen 3.5
+  port: AUTO
+  width: 480
+  height: 320
+  orientation: landscape
+  brightness: 90
+background:
+  source: colour
+  colour: '#030711'
+theme:
+  name: TelemetryForge Boot
+  foreground: '#f7fbff'
+  accent: '#64d8cb'
+  panel: '#0b1220'
+effects:
+  boot_animation_enabled: true
+  boot_animation: forge
+  boot_duration_ms: 1100
+transition:
+  kind: glitch
+  duration_ms: 650
+widgets:
+- editor_name: Boot title
+  kind: text
+  enabled: true
+  left_text: ''
+  right_text: ''
+  x: 58
+  y: 58
+  width: 365
+  height: 62
+  font: Bahnschrift
+  font_size: 42
+  colour: '#ffffff'
+  secondary_colour: '#64d8cb'
+  glow: 10
+  shadow: 8
+  label_format: TELEMETRYFORGE
+- editor_name: Boot subtitle
+  kind: text
+  enabled: true
+  x: 92
+  y: 116
+  width: 296
+  height: 32
+  font: Bahnschrift
+  font_size: 18
+  colour: '#64d8cb'
+  glow: 8
+  label_format: TURZX DISPLAY CORE ONLINE
+- editor_name: CPU boot sweep
+  kind: cpu_usage
+  render_mode: bar
+  enabled: true
+  left_text: 'CPU '
+  right_text: '%'
+  x: 78
+  y: 176
+  width: 324
+  height: 20
+  colour: '#1f99ff'
+  secondary_colour: '#64d8cb'
+  opacity: 1
+  glow: 8
+  use_thresholds: true
+  warning_threshold: 65
+  critical_threshold: 88
+  warning_colour: '#ffd166'
+  critical_colour: '#ff4d6d'
+  refresh_interval_ms: 500
+  label_format: '{value}'
+- editor_name: GPU boot sweep
+  kind: gpu_usage
+  render_mode: bar
+  enabled: true
+  left_text: 'GPU '
+  right_text: '%'
+  x: 78
+  y: 212
+  width: 324
+  height: 20
+  colour: '#7a5cff'
+  secondary_colour: '#ff4bd8'
+  opacity: 1
+  glow: 8
+  use_thresholds: true
+  warning_threshold: 65
+  critical_threshold: 88
+  warning_colour: '#ffd166'
+  critical_colour: '#ff4d6d'
+  refresh_interval_ms: 500
+  label_format: '{value}'
+- editor_name: Boot clock
+  kind: clock
+  enabled: true
+  x: 174
+  y: 260
+  width: 132
+  height: 36
+  font: Bahnschrift
+  font_size: 30
+  colour: '#ffffff'
+  glow: 6
+  label_format: '{value}'
+sensor_poll_ms: 1000
+frame_interval_ms: 120
+cpu_temperature_source: core
+cpu_clock_source: average

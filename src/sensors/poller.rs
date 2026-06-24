@@ -1,6 +1,6 @@
 use super::{
-    libre_hardware_monitor::Reader as HardwareReader, model::SensorSnapshot,
-    weather, windows_volume::Reader as VolumeReader,
+    libre_hardware_monitor::Reader as HardwareReader, model::SensorSnapshot, weather,
+    windows_volume::Reader as VolumeReader,
 };
 use crate::config::schema::{CpuClockSource, CpuTemperatureSource, WeatherConfig};
 use std::{
@@ -103,13 +103,16 @@ impl SensorPoller {
             self.last_hardware_refresh = Some(Instant::now());
         }
         let hardware = &self.hardware_snapshot;
-        let weather_due = weather_config.enabled && self.last_weather_refresh.is_none_or(|last| {
-            last.elapsed() >= Duration::from_secs(weather_config.refresh_minutes.max(5) * 60)
-        });
+        let weather_due = weather_config.enabled
+            && self.last_weather_refresh.is_none_or(|last| {
+                last.elapsed() >= Duration::from_secs(weather_config.refresh_minutes.max(5) * 60)
+            });
         if weather_due {
             match weather::read(weather_config) {
                 Ok(snapshot) => self.weather_snapshot = snapshot,
-                Err(error) => tracing::warn!(error = %format!("{error:#}"), "weather refresh failed"),
+                Err(error) => {
+                    tracing::warn!(error = %format!("{error:#}"), "weather refresh failed")
+                }
             }
             self.last_weather_refresh = Some(Instant::now());
         }

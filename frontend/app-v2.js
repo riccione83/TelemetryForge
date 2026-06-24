@@ -240,6 +240,7 @@ function bindConfig() {
   config.automation ||= {enabled:false,default_screen:null,rules:[]};
   config.automation.rules ||= [];
   config.transition ||= {kind:"fade",duration_ms:450};
+  config.effects ||= {boot_animation_enabled:true,boot_animation:"forge",boot_duration_ms:900,boot_screen:null,boot_screen_hold_ms:500};
   normaliseEditorMetadata();
   const values = {
     orientation: config.display.orientation, width: config.display.width, height: config.display.height,
@@ -251,6 +252,10 @@ function bindConfig() {
     weatherLatitude: config.weather?.latitude ?? 51.5074,
     weatherLongitude: config.weather?.longitude ?? -0.1278,
     weatherRefresh: config.weather?.refresh_minutes ?? 15,
+    bootAnimationEnabled: config.effects?.boot_animation_enabled ?? true,
+    bootAnimation: config.effects?.boot_animation || "forge",
+    bootDuration: config.effects?.boot_duration_ms || 900,
+    bootHold: config.effects?.boot_screen_hold_ms ?? 500,
     backgroundPath: config.background.path || "", backgroundMode: config.background.mode,
     backgroundSource: config.background.source || "file",
     backgroundFolder: config.background.folder || "",
@@ -271,6 +276,7 @@ function bindConfig() {
   renderWidgets();
   renderLayers();
   populateAutomationScreens();
+  populateBootScreens();
   renderRules();
   requestAnimationFrame(renderOverlay);
 }
@@ -309,6 +315,7 @@ async function loadScreens(selected = currentScreen) {
     };
   }
   populateAutomationScreens();
+  populateBootScreens();
   renderRules();
 }
 
@@ -330,6 +337,13 @@ function populateAutomationScreens() {
   if (!$("defaultScreen") || !config?.automation) return;
   $("defaultScreen").innerHTML = screenOptions(config.automation.default_screen || "");
   $("defaultScreen").value = config.automation.default_screen || "";
+}
+
+function populateBootScreens() {
+  if (!$("bootScreen") || !config?.effects) return;
+  const selected = config.effects.boot_screen || "";
+  $("bootScreen").innerHTML = screenOptions(selected, true);
+  $("bootScreen").value = availableScreens.includes(selected) ? selected : "";
 }
 
 function renderRules() {
@@ -1057,6 +1071,12 @@ function readForm() {
   config.automation.default_screen = $("defaultScreen").value || null;
   config.transition.kind = $("transitionKind").value;
   config.transition.duration_ms = Math.max(100, Math.min(3000, +$("transitionDuration").value || 450));
+  config.effects ||= {};
+  config.effects.boot_animation_enabled = $("bootAnimationEnabled").checked;
+  config.effects.boot_animation = $("bootAnimation").value;
+  config.effects.boot_duration_ms = Math.max(250, Math.min(5000, +$("bootDuration").value || 900));
+  config.effects.boot_screen = $("bootScreen").value || null;
+  config.effects.boot_screen_hold_ms = Math.max(0, Math.min(5000, +$("bootHold").value || 0));
   config.background.mode = $("backgroundMode").value;
   config.background.source = $("backgroundSource").value;
   config.background.folder = $("backgroundFolder").value || null;
@@ -1256,6 +1276,7 @@ $("load-screen").onclick=async()=>{
 };
 $("delete-screen").onclick=async()=>{const name=$("screen-list").value;if(!name||!confirm(t("deleteConfirm",{name})))return;await invoke("delete_screen",{name});if(currentScreen===name)currentScreen="";await loadScreens();};
 $("export-package").onclick=async()=>{try{readForm();await invoke("export_package",{config});}catch(e){$("error").textContent=String(e);}};
+$("share-package").onclick=async()=>{try{readForm();const result=await invoke("share_package",{config,screenName:currentScreen||"TelemetryForge Screen"});if(result){$("status").textContent=t("shareSaved",{package:result.package_path,preview:result.preview_path});}}catch(e){$("error").textContent=String(e);}};
 $("import-package").onclick=async()=>{try{const imported=await invoke("import_package");if(!imported)return;config=imported;currentScreen="";resetHistory();collapseAllWidgets();bindConfig();await refreshPreview();}catch(e){$("error").textContent=String(e);}};
 document.querySelectorAll("[data-quick-load]").forEach(button => button.onclick=async()=>{
   const slot=button.dataset.quickLoad;

@@ -25,6 +25,7 @@ use tauri_plugin_dialog::DialogExt;
 fn merge_screen_settings(mut screen: AppConfig, current: &AppConfig) -> AppConfig {
     screen.automation = current.automation.clone();
     screen.transition = current.transition.clone();
+    screen.effects = current.effects.clone();
     screen.libre_hardware_monitor_dll = current.libre_hardware_monitor_dll.clone();
     screen.cpu_temperature_source = current.cpu_temperature_source;
     screen.cpu_clock_source = current.cpu_clock_source;
@@ -49,6 +50,12 @@ pub struct RemoteInfo {
     pub warning: String,
     pub authentication_enabled: bool,
     pub username: String,
+}
+
+#[derive(Serialize)]
+pub struct ShareExportResult {
+    pub package_path: String,
+    pub preview_path: String,
 }
 
 #[tauri::command]
@@ -238,6 +245,7 @@ pub fn new_screen(state: State<AppState>, name: String) -> Result<AppConfig, Str
     config.quick_screens = current.quick_screens;
     config.automation = current.automation;
     config.transition = current.transition;
+    config.effects = current.effects;
     config.widgets.clear();
     let path = persistence::profile_path(&state.config_path, &name).map_err(|e| e.to_string())?;
     if path.exists() {
@@ -283,6 +291,56 @@ pub async fn export_package(
     };
     package::export(&path, &config).map_err(|error| error.to_string())?;
     Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+pub async fn share_package(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    config: AppConfig,
+    screen_name: String,
+) -> Result<Option<ShareExportResult>, String> {
+    let file_name = format!("{}.telemetryforge", safe_share_name(&screen_name));
+    let Some(package_path) = app
+        .dialog()
+        .file()
+        .add_filter("TelemetryForge package", &["telemetryforge"])
+        .set_file_name(&file_name)
+        .blocking_save_file()
+        .and_then(|path| path.as_path().map(std::path::Path::to_path_buf))
+    else {
+        return Ok(None);
+    };
+    let preview_path = package_path.with_extension("preview.png");
+    package::export(&package_path, &config).map_err(|error| error.to_string())?;
+    let sensors = state.sensors.read().clone();
+    let preview = renderer::render(&config, &sensors).map_err(|error| error.to_string())?;
+    let png = renderer::canvas::png_bytes(&preview).map_err(|error| error.to_string())?;
+    std::fs::write(&preview_path, png).map_err(|error| error.to_string())?;
+    Ok(Some(ShareExportResult {
+        package_path: package_path.to_string_lossy().into_owned(),
+        preview_path: preview_path.to_string_lossy().into_owned(),
+    }))
+}
+
+fn safe_share_name(name: &str) -> String {
+    let clean = name
+        .chars()
+        .map(|character| {
+            if character.is_alphanumeric() || matches!(character, '-' | '_' | ' ') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim()
+        .to_string();
+    if clean.is_empty() {
+        "TelemetryForge Screen".into()
+    } else {
+        clean
+    }
 }
 
 #[tauri::command]
@@ -458,6 +516,14 @@ pub fn start_rendering(state: State<AppState>) -> Result<(), String> {
 }
 
 pub fn start_rendering_state(state: &AppState) -> Result<(), String> {
+    start_rendering_with_boot(state, false)
+}
+
+pub fn start_rendering_from_windows_startup(state: State<AppState>) -> Result<(), String> {
+    start_rendering_with_boot(&state, true)
+}
+
+fn start_rendering_with_boot(state: &AppState, allow_boot_animation: bool) -> Result<(), String> {
     let mut worker = state.worker.lock();
     if worker.is_some() {
         return Ok(());
@@ -616,10 +682,6 @@ pub fn start_rendering_state(state: &AppState) -> Result<(), String> {
                     continue;
                 }
                 let result = renderer::render(&current, &displayed).and_then(|target_image| {
-                    let (image, transition_finished) = transition
-                        .as_ref()
-                        .map(|animation| animation.frame(&target_image))
-                        .unwrap_or((target_image, true));
                     if session.is_none() {
                         session = Some(display_driver::DisplaySession::connect(&current.display)?);
                         applied_brightness = current.display.brightness;
@@ -631,6 +693,66 @@ pub fn start_rendering_state(state: &AppState) -> Result<(), String> {
                             .set_brightness(current.display.brightness)?;
                         applied_brightness = current.display.brightness;
                     }
+                    if previous_frame.is_none()
+                        && allow_boot_animation
+                        && current.effects.boot_animation_enabled
+                    {
+                        let duration = current.effects.boot_duration_ms.clamp(250, 5000);
+                        let frame_count = (duration / 33).clamp(8, 90);
+                        let boot_target = current
+                            .effects
+                            .boot_screen
+                            .as_deref()
+                            .filter(|name| !name.trim().is_empty())
+                            .and_then(|name| {
+                                persistence::profile_path(&config_path, name)
+                                    .ok()
+                                    .and_then(|path| persistence::load_or_create(&path).ok())
+                            })
+                            .map(|loaded| merge_screen_settings(loaded, &current))
+                            .as_ref()
+                            .and_then(|boot_config| renderer::render(boot_config, &displayed).ok())
+                            .unwrap_or_else(|| target_image.clone());
+                        for index in 0..frame_count {
+                            if thread_stop.load(Ordering::Relaxed) {
+                                break;
+                            }
+                            let progress = (index + 1) as f32 / frame_count as f32;
+                            let boot_image = scene::boot_frame(
+                                &boot_target,
+                                current.effects.boot_animation,
+                                progress,
+                            );
+                            let send_result = send_changed_region(
+                                session.as_mut().expect("session initialized"),
+                                previous_frame.as_ref(),
+                                &boot_image,
+                            );
+                            if send_result.is_err() {
+                                session = None;
+                                previous_frame = None;
+                                return send_result;
+                            }
+                            previous_frame = Some(boot_image);
+                            thread::sleep(Duration::from_millis(duration / frame_count));
+                        }
+                        if current.effects.boot_screen.is_some() {
+                            thread::sleep(Duration::from_millis(
+                                current.effects.boot_screen_hold_ms.clamp(0, 5000),
+                            ));
+                            transition = previous_frame.clone().and_then(|frame| {
+                                scene::Transition::new(
+                                    frame,
+                                    current.transition.kind,
+                                    current.transition.duration_ms,
+                                )
+                            });
+                        }
+                    }
+                    let (image, transition_finished) = transition
+                        .as_ref()
+                        .map(|animation| animation.frame(&target_image))
+                        .unwrap_or((target_image, true));
                     let send_result = send_changed_region(
                         session.as_mut().expect("session initialized"),
                         previous_frame.as_ref(),
@@ -732,21 +854,17 @@ fn update_displayed_snapshot(
     changed |= assign(&mut current.network_download, target.network_download);
     changed |= assign(&mut current.fan_speed, target.fan_speed);
     changed |= blend_volume(&mut current.system_volume, target.system_volume);
-    changed |= assign(
-        &mut current.weather_temperature,
-        target.weather_temperature,
-    );
+    changed |= assign(&mut current.weather_temperature, target.weather_temperature);
     changed |= assign(&mut current.weather_humidity, target.weather_humidity);
-    changed |= assign(
-        &mut current.weather_wind_speed,
-        target.weather_wind_speed,
-    );
+    changed |= assign(&mut current.weather_wind_speed, target.weather_wind_speed);
     if current.weather_code != target.weather_code {
         current.weather_code = target.weather_code;
         changed = true;
     }
     if current.weather_condition != target.weather_condition {
-        current.weather_condition.clone_from(&target.weather_condition);
+        current
+            .weather_condition
+            .clone_from(&target.weather_condition);
         changed = true;
     }
     if current.history_cpu != target.history_cpu {

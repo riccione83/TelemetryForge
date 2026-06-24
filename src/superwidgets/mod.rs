@@ -20,6 +20,8 @@ const COMMAND_DIALS_SCREEN: &str =
     include_str!("../../samples/superwidgets/screens/Command Dials.yaml");
 const REACTOR_SCREEN: &str = include_str!("../../samples/superwidgets/screens/Reactor Core.yaml");
 const HELLO_SCREEN: &str = include_str!("../../samples/superwidgets/screens/SDK Hello Dial.yaml");
+const BOOT_SCREEN: &str =
+    include_str!("../../samples/superwidgets/screens/TelemetryForge Boot.yaml");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
@@ -74,6 +76,7 @@ pub fn ensure_bundled() -> Result<()> {
         ("Command Dials.yaml", COMMAND_DIALS_SCREEN),
         ("Reactor Core.yaml", REACTOR_SCREEN),
         ("SDK Hello Dial.yaml", HELLO_SCREEN),
+        ("TelemetryForge Boot.yaml", BOOT_SCREEN),
     ] {
         let path = screens.join(name);
         if !path.exists() {

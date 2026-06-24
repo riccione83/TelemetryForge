@@ -11,7 +11,9 @@ An open-source Windows desktop application for TURZX/Turing Smart Screen
 - Text, bars, circular gauges and historical graphs
 - Per-widget fonts, gradients, opacity, glow, shadows and thresholds
 - Smooth animations and partial display updates
+- Optional boot animation and premium screen-transition effects
 - Automatic screen rules with fade, slide, dissolve and glitch transitions
+- Share export that creates a `.telemetryforge` package plus a PNG preview
 - English and Italian user interfaces
 - Lightweight weather widgets using cached Open-Meteo current conditions
 
@@ -40,7 +42,8 @@ and resizable editor object.
 
 Release builds include **CPU Command Dial**, **GPU Command Dial**,
 **Reactor Core** and **SDK Hello Dial**. Ready-to-use screen profiles are
-installed automatically when missing. Editable profiles and standalone WASM
+installed automatically when missing, including the editable
+**TelemetryForge Boot** sample screen. Editable profiles and standalone WASM
 packages are available in [`samples/superwidgets`](samples/superwidgets).
 
 External components can be created in Rust without rebuilding TelemetryForge.

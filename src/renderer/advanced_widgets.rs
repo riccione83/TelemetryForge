@@ -519,15 +519,8 @@ fn shown(k: WidgetKind, s: &SensorSnapshot) -> String {
         WidgetKind::Gif => String::new(),
         WidgetKind::SuperWidget => String::new(),
         WidgetKind::Fps => "--".into(),
-        WidgetKind::WeatherCondition => s
-            .weather_condition
-            .clone()
-            .unwrap_or_else(|| "--".into()),
-        WidgetKind::WeatherIcon => s
-            .weather_code
-            .map(weather_icon)
-            .unwrap_or("--")
-            .into(),
+        WidgetKind::WeatherCondition => s.weather_condition.clone().unwrap_or_else(|| "--".into()),
+        WidgetKind::WeatherIcon => s.weather_code.map(weather_icon).unwrap_or("--").into(),
         _ => numeric(k, s)
             .map(|v| format!("{v:.0}"))
             .unwrap_or_else(|| "--".into()),
@@ -805,13 +798,7 @@ mod tests {
         widget.height = 72;
         widget.font_size = 56.0;
         let mut layer = RgbaImage::new(84, 84);
-        draw_centred_glyph(
-            &mut layer,
-            &widget,
-            Rgba([255, 255, 255, 255]),
-            &font,
-            "☀",
-        );
+        draw_centred_glyph(&mut layer, &widget, Rgba([255, 255, 255, 255]), &font, "☀");
         let (left, top, right, bottom) = visible_alpha_bounds(&layer).unwrap();
         let glyph_centre_x = (left + right) as i32;
         let glyph_centre_y = (top + bottom) as i32;

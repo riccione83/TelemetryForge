@@ -59,6 +59,7 @@
           <button id="delete-screen" class="danger" data-i18n="delete">Delete</button>
           <button id="import-package" class="secondary" data-i18n="importPackage">Import package</button>
           <button id="export-package" class="secondary" data-i18n="exportPackage">Export package</button>
+          <button id="share-package" class="secondary" data-i18n="sharePackage">Share</button>
         </div>
       </div>
       <div class="card setup-card">
@@ -168,6 +169,25 @@
         </div>
         <p class="hint" data-i18n="automationHint">Rules are evaluated from top to bottom. The first matching rule wins.</p>
         <div id="automation-rules"></div>
+      </div>
+      <div class="card setup-card">
+        <div class="preview-head">
+          <h2 data-i18n="premiumEffects">Premium effects</h2>
+        </div>
+        <div class="grid">
+          <label class="checkline"><input id="bootAnimationEnabled" type="checkbox" /><span data-i18n="enableBootAnimation">Enable boot animation</span></label>
+          <label><span data-i18n="bootAnimation">Boot animation</span>
+            <select id="bootAnimation">
+              <option value="forge" data-i18n="bootForge">Forge core</option>
+              <option value="scanlines" data-i18n="bootScanlines">Scanlines</option>
+              <option value="fade" data-i18n="bootFade">Fade in</option>
+            </select>
+          </label>
+          <label><span data-i18n="bootScreen">Boot screen</span><select id="bootScreen"></select></label>
+          <label><span data-i18n="bootDuration">Boot duration (ms)</span><input id="bootDuration" type="number" min="250" max="5000" step="50" /></label>
+          <label><span data-i18n="bootHold">Boot screen hold (ms)</span><input id="bootHold" type="number" min="0" max="5000" step="50" /></label>
+        </div>
+        <p class="hint" data-i18n="premiumEffectsHint">Boot animation runs once when display rendering starts. Screen transitions are used when automatic or manual screen changes happen.</p>
       </div>
       <div class="card setup-card">
         <h2 data-i18n="weather">Weather</h2>

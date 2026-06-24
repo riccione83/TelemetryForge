@@ -6,6 +6,7 @@ TelemetryForge bundles these components and screens in release builds:
 - **GPU Command Dial**
 - **Reactor Core**
 - **SDK Hello Dial**
+- **TelemetryForge Boot** screen profile
 
 Ready-to-use screen profiles are in [`screens`](screens). External WASM
 component packages are also available in [`components`](components) for manual

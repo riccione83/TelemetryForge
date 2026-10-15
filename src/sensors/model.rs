@@ -45,7 +45,9 @@ pub struct SensorSnapshot {
     pub vram_used_mb: Option<f32>,
     pub vram_total_mb: Option<f32>,
     pub disk_usage: Option<f32>,
+    /// Bytes / 1024 / second (KiB/s), historically labelled KB/s in the UI/API.
     pub network_upload: Option<f32>,
+    /// Same raw unit as network_upload; histories and thresholds use it too.
     pub network_download: Option<f32>,
     pub fan_speed: Option<f32>,
     pub system_volume: Option<f32>,

@@ -25,3 +25,13 @@ assert.equal(context.sensorHealth({...info,value:null},2000).state,'unavailable'
 assert.equal(context.sensorHealth(info,12000).state,'stale');
 assert.equal(context.sensorHealth({...info,error:'source offline'},2000).state,'stale');
 console.log('Sensor health regression passed: zero, missing, stale, source error.');
+
+// New network widgets opt into readable units without migrating saved formats.
+vm.runInContext(source.slice(source.indexOf('const defaults ='), source.indexOf('const fonts =')) +
+  '\nthis.widgetDefaults = defaults; this.widgetAffixes = defaultAffixes;', context);
+for (const kind of ['network_upload', 'network_download']) {
+  assert.equal(context.widgetDefaults[kind], '{speed}');
+  assert.equal(context.widgetAffixes[kind]?.right || '', '', 'auto unit is not duplicated');
+}
+assert.equal(context.widgetDefaults.cpu_usage, '{value}', 'other sensor defaults are unchanged');
+console.log('Network defaults regression passed: automatic units for new upload/download widgets.');

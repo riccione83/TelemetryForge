@@ -147,7 +147,7 @@ const defaults = {
   cpu_temperature: "{value}", cpu_usage: "{value}", cpu_clock: "{value}",
   gpu_temperature: "{value}", gpu_usage: "{value}",
   gpu_clock: "{value}", gpu_power: "{value}", ram_usage: "{value}", vram_usage: "{value}",
-  disk_usage: "{value}", network_upload: "{value}", network_download: "{value}",
+  disk_usage: "{value}", network_upload: "{speed}", network_download: "{speed}",
   fan_speed: "{value}", clock: "{value}", date: "{value}", fps: "{value}",
   text: "Testo libero", remote_text: "{value}", gif: "", volume: "{value}", weather_temperature:"{value}",
   weather_humidity:"{value}",weather_wind:"{value}",weather_condition:"{value}",super_widget: ""
@@ -562,6 +562,7 @@ function renderWidgets() {
         <label class="wide">${t("textFormat")}<input data-i="${i}" data-k="label_format" value="${esc(w.label_format)}" placeholder="GPU {value} MHz"></label>
         <label>${t("leftText")}<input data-i="${i}" data-k="left_text" value="${esc(w.left_text || "")}" placeholder="GPU "></label>
         <label>${t("rightText")}<input data-i="${i}" data-k="right_text" value="${esc(w.right_text || "")}" placeholder=" °C"></label>
+        ${["network_upload", "network_download"].includes(w.kind) ? `<small class="wide hint">${t("networkSpeedHint")}</small>` : ""}
         ${w.kind === "remote_text" ? `<label class="wide">${t("remoteTextKey")}<input data-i="${i}" data-k="remote_text_key" value="${esc(w.remote_text_key || "status")}" placeholder="game-status"></label><small class="wide hint">${t("remoteTextHint")}</small>` : ""}
         `}
         <label>X<input data-i="${i}" data-k="x" type="number" value="${w.x}"></label>

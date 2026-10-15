@@ -163,12 +163,7 @@ fn widget_layers(
     match widget.render_mode {
         WidgetRenderMode::Text => {
             let font = super::fonts::load(&widget.font)?;
-            let value = shown(widget, sensors, remote_texts);
-            let middle = widget
-                .label_format
-                .replace("{value:.0}", &value)
-                .replace("{value}", &value);
-            let text = format!("{}{}{}", widget.left_text, middle, widget.right_text);
+            let text = label_text(widget, sensors, remote_texts);
             if widget.kind == WidgetKind::WeatherIcon {
                 draw_centred_glyph(&mut layer, &local_widget, primary, &font, &text);
             } else {
@@ -622,6 +617,51 @@ fn numeric(k: WidgetKind, s: &SensorSnapshot) -> Option<f32> {
         _ => None,
     }
 }
+pub(super) fn label_text(
+    widget: &WidgetConfig,
+    sensors: &SensorSnapshot,
+    remote_texts: &HashMap<String, String>,
+) -> String {
+    let value = shown(widget, sensors, remote_texts);
+    let template = if matches!(
+        widget.kind,
+        WidgetKind::NetworkUpload | WidgetKind::NetworkDownload
+    ) && widget.label_format.contains("{speed}")
+    {
+        widget
+            .label_format
+            .replace("{speed}", &network_speed(numeric(widget.kind, sensors)))
+    } else {
+        widget.label_format.clone()
+    };
+    let middle = template
+        .replace("{value:.0}", &value)
+        .replace("{value}", &value);
+    format!("{}{}{}", widget.left_text, middle, widget.right_text)
+}
+
+/// The poller stores bytes / 1024 / second (historically labelled KB/s).
+/// Convert to decimal bit rates only for display; keep sensor/history values intact.
+fn network_speed(value: Option<f32>) -> String {
+    let Some(value) = value.filter(|value| value.is_finite() && *value >= 0.0) else {
+        return "--".into();
+    };
+    let mut rate = f64::from(value) * 1024.0 * 8.0 / 1000.0;
+    let units = ["Kbit/s", "Mbit/s", "Gbit/s"];
+    let mut unit = 0;
+    // Promote values that would round to 1000.0 in the smaller unit, too.
+    while unit < units.len() - 1 && rate >= 999.95 {
+        rate /= 1000.0;
+        unit += 1;
+    }
+    let number = format!("{rate:.1}");
+    format!(
+        "{} {}",
+        number.strip_suffix(".0").unwrap_or(&number),
+        units[unit]
+    )
+}
+
 fn shown(
     widget: &WidgetConfig,
     s: &SensorSnapshot,
@@ -973,6 +1013,90 @@ mod tests {
         assert_eq!(frequency(Some(518.0)), "518 MHz");
         assert_eq!(frequency(Some(4850.0)), "4.85 GHz");
         assert_eq!(frequency(None), "--");
+    }
+
+    #[test]
+    fn network_speed_converts_binary_kilobytes_to_decimal_bits() {
+        for (raw, expected) in [
+            (0.0, "0 Kbit/s"),
+            (0.125, "1 Kbit/s"),
+            (1.0, "8.2 Kbit/s"),
+            (122.0, "999.4 Kbit/s"),
+            (122.0703125, "1 Mbit/s"),
+            (69580.078125, "570 Mbit/s"),
+            (80000.0, "655.4 Mbit/s"),
+            (122000.0, "999.4 Mbit/s"),
+            (122070.3125, "1 Gbit/s"),
+            (1250000.0, "10.2 Gbit/s"),
+        ] {
+            assert_eq!(network_speed(Some(raw)), expected, "raw KB/s: {raw}");
+        }
+        // Rounding must not leave a confusing 1000 Kbit/s or 1000 Mbit/s.
+        assert_eq!(network_speed(Some(999.96 / 8.192)), "1 Mbit/s");
+        assert_eq!(network_speed(Some(999960.0 / 8.192)), "1 Gbit/s");
+        for value in [None, Some(-1.0), Some(f32::NAN), Some(f32::INFINITY)] {
+            assert_eq!(network_speed(value), "--");
+        }
+    }
+
+    #[test]
+    fn network_labels_preserve_legacy_formats_and_allow_auto_units() {
+        let sensors = SensorSnapshot {
+            network_upload: Some(80000.0),
+            network_download: Some(80000.0),
+            ..Default::default()
+        };
+        let texts = HashMap::new();
+        for kind in [WidgetKind::NetworkUpload, WidgetKind::NetworkDownload] {
+            // The legacy layout needs no migration and keeps its explicit affixes.
+            let mut widget = WidgetConfig::new(kind, 31, 288, "{value}");
+            widget.left_text = "UP   ".into();
+            widget.right_text = " B/s".into();
+            let yaml = serde_yaml::to_string(&widget).unwrap();
+            let restored: WidgetConfig = serde_yaml::from_str(&yaml).unwrap();
+            assert_eq!(restored, widget);
+            assert_eq!(label_text(&restored, &sensors, &texts), "UP   80000 B/s");
+            widget.label_format = "{value:.0} KB/s".into();
+            widget.right_text.clear();
+            assert_eq!(label_text(&widget, &sensors, &texts), "UP   80000 KB/s");
+            widget.label_format = "{speed} ({value} KB/s)".into();
+            assert_eq!(
+                label_text(&widget, &sensors, &texts),
+                "UP   655.4 Mbit/s (80000 KB/s)"
+            );
+            widget.label_format = "{speed}".into();
+            assert_eq!(
+                label_text(&widget, &SensorSnapshot::default(), &texts),
+                "UP   --"
+            );
+            assert_eq!(numeric(kind, &sensors), Some(80000.0));
+            assert_eq!(max_for(kind), 10000.0);
+        }
+        let text = WidgetConfig::new(WidgetKind::Text, 0, 0, "Literal {speed}");
+        assert_eq!(label_text(&text, &sensors, &texts), "Literal {speed}");
+    }
+
+    #[test]
+    fn network_auto_text_invalidates_cache_for_fractional_raw_changes() {
+        let texts = HashMap::new();
+        for kind in [WidgetKind::NetworkUpload, WidgetKind::NetworkDownload] {
+            let mut config = AppConfig::default();
+            config.widgets = vec![WidgetConfig::new(kind, 0, 0, "{speed}")];
+            let mut sensors = SensorSnapshot {
+                network_upload: Some(0.1),
+                network_download: Some(0.1),
+                ..Default::default()
+            };
+            let first = super::super::visual_signature(&config, &sensors, &texts);
+            sensors.network_upload = Some(0.2);
+            sensors.network_download = Some(0.2);
+            let second = super::super::visual_signature(&config, &sensors, &texts);
+            assert_ne!(first, second, "0.8 and 1.6 Kbit/s must render differently");
+            assert_eq!(
+                label_text(&config.widgets[0], &sensors, &texts),
+                "1.6 Kbit/s"
+            );
+        }
     }
 
     #[test]

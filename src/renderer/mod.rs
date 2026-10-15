@@ -110,6 +110,13 @@ pub fn visual_signature(
         }
         match widget.render_mode {
             WidgetRenderMode::Text => {
+                if matches!(
+                    widget.kind,
+                    WidgetKind::NetworkUpload | WidgetKind::NetworkDownload
+                ) {
+                    // Auto units expose changes smaller than one raw KB/s.
+                    advanced_widgets::label_text(widget, sensors, remote_texts).hash(&mut hasher);
+                }
                 numeric(widget.kind, sensors)
                     .map(|value| value.round() as i64)
                     .hash(&mut hasher);

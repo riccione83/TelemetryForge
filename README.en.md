@@ -121,6 +121,28 @@ Each widget supports:
 - text, bar, circle or historical graph rendering;
 - independent position and dimensions.
 
+### Network speed units
+
+New network upload/download widgets use `{speed}` in **Text / format** to
+automatically display Kbit/s, Mbit/s or Gbit/s, with up to one decimal place.
+The unit is included: for example, `UP {speed}` displays `UP 570 Mbit/s`.
+Zero displays `0 Kbit/s`; missing or invalid readings display `--`.
+
+Existing screens keep their formats and positions. To opt an existing network
+widget into automatic units, replace `{value}` with `{speed}` and remove any
+fixed unit such as ` B/s` or ` KB/s` from **Right text** or the format itself.
+Keep custom labels such as `UP` and `DOWN` in **Left text**.
+
+`{value}` and `{value:.0}` still show the rounded raw sensor value, so existing
+layouts, graph scales, histories and thresholds continue to work unchanged.
+The raw values are historically labelled KB/s, but the sysinfo poller computes
+bytes / 1024 / second (KiB/s). `{speed}` multiplies by 1024 and 8, then uses
+decimal SI bit units: 69,580.078125 raw KB/s is 570 Mbit/s; 80,000 is
+655.4 Mbit/s. Formatting does not change how interfaces are sampled or summed.
+The editor preview and USB display use the same formatter. Older application
+versions do not understand `{speed}`; use `{value} KB/s` when sharing a screen
+with users of those versions.
+
 Weather widgets are available for current temperature, humidity, wind speed
 and a text condition. A separate scalable monochrome weather icon widget can
 be styled with the normal colour, opacity, glow and shadow controls. Enable
